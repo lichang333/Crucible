@@ -13,7 +13,7 @@ cold-eyes verification.
 |---|---|---|
 | `/moa` | Multi-model Q&A and analysis | Read-only `agy` (`Orchestrator (Carbon)`) + `grok` (OpenCode xAI subscription or `XAI_API_KEY`) + configured API answers (`glm`/`deepseek`/`minimax`); current-session synthesis |
 | `/auto` | Delegated single-module coding | Isolated `agy` sandbox worker (or native Claude Code CLI / Claude cloud bridge); cross-family review + local `verify --full` & `apply --sha` |
-| `/swarm` | Parallel multi-file orchestration | Automatic prefix-free triage in OpenCode (`default_agent: swarm`) & Cursor (`alwaysApply` rule + `swarm-coordinator`), splitting work into disjoint sandboxed `agy` slices with cross-family verification and cross-pool quota failover |
+| `/swarm` | Parallel multi-file orchestration | Automatic prefix-free triage in Antigravity / `agy` (`always_on` rule), OpenCode (`default_agent: swarm`), & Cursor (`alwaysApply` rule + `swarm-coordinator`), splitting work into disjoint sandboxed `agy` slices with cross-family verification and cross-pool quota failover |
 
 Provider models, active `agy` family tiers (`agy_catalog` / `agy_routes` / `agy_alternatives`),
 and role defaults live in `config/`; application profiles (`codex.json`, `claude.json`,
@@ -30,7 +30,8 @@ entrypoint applies; platform folders are symlinks into the shared implementation
 AGENTS.md / CLAUDE.md / GEMINI.md   platform-specific project entrypoints
 platforms/codex/skills/             Codex moa and auto skill entrypoints
 platforms/claude/skills/            Claude moa and auto skill entrypoints
-platforms/gemini/skills/            Antigravity / Gemini moa and auto skill entrypoints
+platforms/gemini/skills/            Antigravity / Gemini moa, auto and swarm skill entrypoints
+platforms/gemini/rules/             Antigravity / agy always_on triage rule (`swarm-coordinator.md`)
 platforms/opencode/skills/          OpenCode moa, auto and swarm skill entrypoints
 platforms/opencode/agents/          OpenCode primary agents (`swarm.md`)
 platforms/cursor/skills/            Cursor moa, auto and swarm skill entrypoints (ambient auto-invoke)
@@ -54,7 +55,7 @@ in the existing local `skills/moa/.env`, with no per-platform copy.
 ./install.sh                         # all platforms (codex, claude, gemini, opencode, cursor)
 ./install.sh --platform codex        # only Codex
 ./install.sh --platform claude       # only Claude
-./install.sh --platform gemini       # only Gemini / agy (alias: --platform agy)
+./install.sh --platform gemini       # only Gemini / agy (moa, auto, swarm skills + always_on rule; alias: --platform agy)
 ./install.sh --platform opencode     # only OpenCode (moa, auto, swarm skills + swarm agent)
 ./install.sh --platform cursor       # only Cursor (moa, auto, swarm skills + agent + alwaysApply rule)
 ```
@@ -62,7 +63,10 @@ in the existing local `skills/moa/.env`, with no per-platform copy.
 Install targets:
 - **Codex**: `~/.agents/skills/{moa,auto}`
 - **Claude**: `~/.claude/skills/{moa,auto}`
-- **Gemini / Antigravity**: `~/.gemini/config/skills/{moa,auto}`
+- **Gemini / Antigravity (`agy`)**: `~/.gemini/config/skills/{moa,auto,swarm}` plus
+  `~/.gemini/config/rules/swarm-coordinator.md` (`trigger: always_on`, active across `agy` CLI,
+  Antigravity App, and Antigravity IDE without typing `/swarm`, with an automatic exemption for
+  delegated `agy_worker.py` sub-workers and subagents).
 - **OpenCode**: `~/.config/opencode/skills/{moa,auto,swarm}` plus
   `~/.config/opencode/agents/swarm.md`. Set `"default_agent": "swarm"` in
   `~/.config/opencode/opencode.jsonc` to enter `Swarm` directly without `/swarm` (`Tab` switches
