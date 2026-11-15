@@ -1,5 +1,9 @@
 # Shared project conventions
 
+- **MoA** (project) means *Multi-agent Orchestration & Auto-sandbox*. Keep directory
+  and skill names as `moa` / `/moa` for compatibility. Treat `/moa` as the
+  Mixture-of-Agents Q&A workflow; `/auto` and `/swarm` are peer workflows, not
+  renames of the project.
 - Keep platform instructions separate and runtime implementations shared. Provider
   models and role defaults belong in `config/`, not in prompts or Python constants.
 - A platform identifies the coordinating application; an executor identifies the
