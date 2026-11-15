@@ -1,4 +1,7 @@
-# Shared MoA workflow
+# Shared `/moa` workflow (Mixture of Agents)
+
+This document covers the `/moa` Q&A skill only. The broader project name **MoA**
+means *Multi-agent Orchestration & Auto-sandbox* (see [project conventions](project-conventions.md)).
 
 `moa_runner.py` collects external API answers. It is a Q&A and analysis tool, not a
 code-executing worker. External providers have no live web access in this runner.
