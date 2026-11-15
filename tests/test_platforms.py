@@ -37,7 +37,7 @@ class PlatformPackages(unittest.TestCase):
                     profile = json.loads((entry / "routing.json").read_text())
                     self.assertTrue((entry / profile["extends"]).is_file())
 
-        for platform in ("opencode", "cursor"):
+        for platform in ("gemini", "opencode", "cursor"):
             swarm_entry = ROOT / "platforms" / platform / "skills/swarm"
             with self.subTest(platform=platform, skill="swarm"):
                 self.assertTrue((swarm_entry / "SKILL.md").is_file())
@@ -121,6 +121,28 @@ class PlatformPackages(unittest.TestCase):
             skill_text = (ROOT / "platforms/cursor/skills" / skill / "SKILL.md").read_text()
             self.assertNotIn("disable-model-invocation: true", skill_text,
                              f"Cursor {skill} skill should stay auto-invocable")
+
+    def test_gemini_swarm_rule_and_skill_entrypoints(self):
+        rule_path = ROOT / "platforms/gemini/rules/swarm-coordinator.md"
+        self.assertTrue(rule_path.is_file())
+        self.assertTrue((ROOT / "platforms/agy/rules/swarm-coordinator.md").is_file())
+        rule_text = rule_path.read_text()
+        self.assertLess(len(rule_text.encode("utf-8")), 24000)
+        self.assertTrue(rule_text.startswith("---\n"))
+        rule_fm = rule_text.split("---\n", 2)[1]
+        self.assertIn("trigger: always_on", rule_fm)
+        self.assertNotIn("alwaysOn", rule_fm)
+        self.assertIn("description:", rule_fm)
+        self.assertIn("Sub-Worker / Subagent Exemption", rule_text)
+
+        swarm_skill = ROOT / "platforms/gemini/skills/swarm/SKILL.md"
+        self.assertTrue(swarm_skill.is_file())
+        self.assertTrue((ROOT / "platforms/agy/skills/swarm/SKILL.md").is_file())
+        skill_text = swarm_skill.read_text()
+        self.assertTrue(skill_text.startswith("---\n"))
+        skill_fm = skill_text.split("---\n", 2)[1]
+        self.assertIn("name: swarm", skill_fm)
+        self.assertIn("description:", skill_fm)
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ def main():
                     "cursor": user_home / ".cursor/skills"}
     platform_skills = {"codex": ("moa", "auto"),
                        "claude": ("moa", "auto"),
-                       "gemini": ("moa", "auto"),
+                       "gemini": ("moa", "auto", "swarm"),
                        "opencode": ("moa", "auto", "swarm"),
                        "cursor": ("moa", "auto", "swarm")}
     selected = "gemini" if args.platform == "agy" else args.platform
@@ -40,6 +40,9 @@ def main():
                     destinations[platform] / skill)
                    for platform in platforms for skill in platform_skills[platform]]
     agent_links = []
+    if "gemini" in platforms:
+        agent_links.append((repo / "platforms/gemini/rules/swarm-coordinator.md",
+                            user_home / ".gemini/config/rules/swarm-coordinator.md"))
     if "opencode" in platforms:
         agent_links.append((repo / "platforms/opencode/agents/swarm.md",
                             user_home / ".config/opencode/agents/swarm.md"))

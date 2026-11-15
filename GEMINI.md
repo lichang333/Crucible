@@ -2,8 +2,8 @@
 
 Read [the shared project conventions](shared/project-conventions.md) when working in this repository.
 
-Antigravity / Gemini skill entrypoints live in `platforms/gemini/skills/` (aliased as
-`platforms/agy/skills/`); OpenCode entrypoints live in `platforms/opencode/skills/` and
+Antigravity / Gemini entrypoints live in `platforms/gemini/skills/` (`moa`, `auto`, `swarm`)
+and `platforms/gemini/rules/swarm-coordinator.md` (aliased via `platforms/agy/`); OpenCode entrypoints live in `platforms/opencode/skills/` and
 `platforms/opencode/agents/swarm.md`; Cursor entrypoints live in `platforms/cursor/skills/`,
 `platforms/cursor/agents/swarm-coordinator.md`, and `platforms/cursor/rules/swarm-coordinator.mdc`;
 Claude entrypoints live in `platforms/claude/skills/`; Codex entrypoints live in

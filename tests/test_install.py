@@ -31,10 +31,12 @@ class InstallTests(unittest.TestCase):
         self.write("skills/moa/.env.example", "EXAMPLE_API_KEY=\n")
         self.write("skills/auto/agy_guard.py", "#!/usr/bin/env python3\n")
         for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
-            skills = ("moa", "auto", "swarm") if platform in ("opencode", "cursor") else ("moa", "auto")
+            skills = ("moa", "auto", "swarm") if platform in ("gemini", "opencode", "cursor") else ("moa", "auto")
             for skill in skills:
                 self.write(f"platforms/{platform}/skills/{skill}/SKILL.md",
                            f"{platform}: {skill}\n")
+        self.write("platforms/gemini/rules/swarm-coordinator.md",
+                   "---\ntrigger: always_on\ndescription: swarm\n---\nswarm\n")
         self.write("platforms/opencode/agents/swarm.md",
                    "---\ndescription: swarm\nmode: primary\n---\nswarm\n")
         self.write("platforms/cursor/agents/swarm-coordinator.md",
@@ -89,12 +91,17 @@ class InstallTests(unittest.TestCase):
                      else ".config/opencode" if platform == "opencode"
                      else ".cursor" if platform == "cursor"
                      else ".gemini/config")
-        skills = ("moa", "auto", "swarm") if platform in ("opencode", "cursor") else ("moa", "auto")
+        skills = ("moa", "auto", "swarm") if platform in ("gemini", "opencode", "cursor") else ("moa", "auto")
         for skill in skills:
             path = self.user_home / directory / "skills" / skill
             self.assertTrue(path.is_symlink())
             self.assertEqual(os.readlink(path), str(self.repo / "platforms" / platform /
                                                    "skills" / skill))
+        if platform == "gemini":
+            rule_path = self.user_home / ".gemini/config/rules/swarm-coordinator.md"
+            self.assertTrue(rule_path.is_symlink())
+            self.assertEqual(os.readlink(rule_path),
+                             str(self.repo / "platforms/gemini/rules/swarm-coordinator.md"))
         if platform == "opencode":
             agent_path = self.user_home / ".config/opencode/agents/swarm.md"
             self.assertTrue(agent_path.is_symlink())
@@ -146,6 +153,7 @@ class InstallTests(unittest.TestCase):
         self.assert_installed("codex")
         self.assertFalse((self.user_home / ".claude").exists())
         self.assertFalse((self.user_home / ".gemini/config/skills").exists())
+        self.assertFalse((self.user_home / ".gemini/config/rules").exists())
         self.assertFalse((self.user_home / ".config/opencode/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/agents").exists())
         self.assertFalse((self.user_home / ".cursor").exists())
@@ -156,6 +164,7 @@ class InstallTests(unittest.TestCase):
         self.assert_installed("claude")
         self.assertFalse((self.user_home / ".agents").exists())
         self.assertFalse((self.user_home / ".gemini/config/skills").exists())
+        self.assertFalse((self.user_home / ".gemini/config/rules").exists())
         self.assertFalse((self.user_home / ".config/opencode/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/agents").exists())
         self.assertFalse((self.user_home / ".cursor").exists())
@@ -187,6 +196,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.user_home / ".agents").exists())
         self.assertFalse((self.user_home / ".claude").exists())
         self.assertFalse((self.user_home / ".gemini/config/skills").exists())
+        self.assertFalse((self.user_home / ".gemini/config/rules").exists())
         self.assertFalse((self.user_home / ".cursor").exists())
         self.assertIn(HOOK_KEY, self.hooks())
 
@@ -196,6 +206,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.user_home / ".agents").exists())
         self.assertFalse((self.user_home / ".claude").exists())
         self.assertFalse((self.user_home / ".gemini/config/skills").exists())
+        self.assertFalse((self.user_home / ".gemini/config/rules").exists())
         self.assertFalse((self.user_home / ".config/opencode").exists())
         self.assertIn(HOOK_KEY, self.hooks())
 
@@ -385,6 +396,21 @@ class InstallTests(unittest.TestCase):
         (self.repo / "platforms/cursor/agents/swarm-coordinator.md").unlink()
         before = self.snapshot()
         result = self.invoke("--platform", "cursor", success=False)
+        self.assertEqual(before, self.snapshot())
+        self.assertIn("missing agent entry point", result.stderr)
+
+    def test_gemini_rule_conflict_is_backed_up(self):
+        self.write(".gemini/config/rules/swarm-coordinator.md", "existing gemini rule", home=True)
+        self.invoke("--platform", "gemini")
+        self.assert_installed("gemini")
+        saved = {path.name: path for path in self.backups()}
+        self.assertEqual(saved[".gemini_config_rules_swarm-coordinator.md"].read_text(),
+                         "existing gemini rule")
+
+    def test_missing_gemini_rule_fails_preflight(self):
+        (self.repo / "platforms/gemini/rules/swarm-coordinator.md").unlink()
+        before = self.snapshot()
+        result = self.invoke("--platform", "gemini", success=False)
         self.assertEqual(before, self.snapshot())
         self.assertIn("missing agent entry point", result.stderr)
 
