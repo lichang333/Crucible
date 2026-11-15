@@ -1,9 +1,4 @@
-# MoA — Multi-agent Orchestration & Auto-sandbox
-
-**MoA** here means *Multi-agent Orchestration & Auto-sandbox*: shared multi-agent
-workflows for Antigravity, OpenCode, Cursor, Claude Code, and Codex. The `/moa`
-skill remains Mixture-of-Agents Q&A synthesis; `/auto` and `/swarm` cover sandboxed
-coding and parallel orchestration. Paths and command names stay `moa` for compatibility.
+# MoA — Shared Multi-Agent Workflows for Antigravity, OpenCode, Cursor, Claude Code, and Codex
 
 Separate platform instructions, one shared implementation. The current host session
 triages tasks and integrates changes, while subscription-backed workers (**Google AI Ultra**
