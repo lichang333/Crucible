@@ -38,9 +38,12 @@ For native Claude Code subscription execution, use the
 [native CLI workflow](claude-local-workflow.md) and `claude_local.py`.
 
 Prefer available included subscription allowance, following `auto_funding` in the
-shared profile. GLM, DeepSeek and MiniMax are prepaid `api_advisors` for planning
-and read-only review through the shared MoA runner; use them only with applicable
-explicit spending authorization.
+shared profile. **`Grok-4.7`** (via local signed-in OpenCode xAI subscription at `$0` API
+cost, or `XAI_API_KEY`), **`GLM-5.3`**, **`DeepSeek-V4-Pro`**, and **`MiniMax-M3`** are
+supported advisors and cross-family patch reviewers through `moa_runner.py` and
+`python3 "$W" review '<run-id>' --executor auto` (or `--model grok` / `--executor api`,
+auto-failing over when `agy` quota pools are exhausted); use prepaid API providers only
+with applicable explicit spending authorization.
 
 On quota exhaustion, stop and preserve the partial result. Follow the shared
 workflow's required decision by an available candidate from

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,7 @@ import uuid
 spec = importlib.util.spec_from_file_location("moa_runner", Path(__file__).resolve().with_name("moa_runner.py"))
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
+_REAL_LOAD_ENV = runner.load_env
 
 
 class RunnerTests(unittest.TestCase):
@@ -59,7 +61,9 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(headless["providers"], codex["providers"])
         self.assertEqual(codex["native_roles"]["planner"], "gpt-6-astra")
         self.assertEqual(codex["agy_routes"]["l1"], claude["agy_routes"]["l1"])
-        self.assertEqual(headless["reviewer"]["model"], "glm-5.2")
+        self.assertEqual(headless["reviewer"]["model"], "glm-5.3")
+        self.assertEqual(headless["providers"]["glm"], {"model": "glm-5.3", "display_name": "GLM-5.3"})
+        self.assertEqual(headless["providers"]["deepseek"], {"model": "deepseek-v4-pro", "display_name": "DeepSeek-V4-Pro"})
 
     def test_config_preview_does_not_read_keys_call_models_or_create_records(self):
         for alias in ("--show-config", "--dry-run"):
@@ -78,7 +82,7 @@ class RunnerTests(unittest.TestCase):
         for platform in ("codex", "claude"):
             code, stdout, _, call = self.invoke(["--platform", platform, "question"])
             self.assertEqual(code, 0)
-            self.assertEqual(self.raw_response(stdout), {"DeepSeek-Chat": "worker answer"})
+            self.assertEqual(self.raw_response(stdout), {"DeepSeek-V4-Pro": "worker answer"})
             self.assertEqual(call.call_count, 1)
 
     def test_headless_legacy_default_aggregates_and_raw_override_remains(self):
@@ -125,7 +129,7 @@ class RunnerTests(unittest.TestCase):
             return "usable answer"
         code, stdout, stderr, _ = self.invoke(["--platform", "codex", "question"], side_effect=answer)
         self.assertEqual(code, 0)
-        self.assertEqual(self.raw_response(stdout), {"DeepSeek-Chat": "usable answer"})
+        self.assertEqual(self.raw_response(stdout), {"DeepSeek-V4-Pro": "usable answer"})
         self.assertIn("Partial failure", stderr)
         record = self.record()
         self.assertEqual(record["status"], "partial_success")
@@ -137,7 +141,7 @@ class RunnerTests(unittest.TestCase):
             if system and system.startswith("You are the Aggregator"):
                 payload = json.loads(prompt)
                 self.assertEqual(payload["original_prompt"], "question")
-                self.assertEqual(payload["worker_responses"], {"DeepSeek-Chat": "usable answer"})
+                self.assertEqual(payload["worker_responses"], {"DeepSeek-V4-Pro": "usable answer"})
                 self.assertIn(runner.COMMON_RULES, system)
                 self.assertNotIn("usable answer", system)
                 return "final answer"
@@ -167,7 +171,7 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("===MOA_REVIEW_START===", stdout)
         self.assertIn("===MOA_REVIEW_END===", stdout)
         self.assertEqual(call.call_args.args[0], "glm")
-        self.assertEqual(call.call_args.args[3], "glm-5.2")
+        self.assertEqual(call.call_args.args[3], "glm-5.3")
         self.assertEqual(self.record()["reviewer_result"]["status"], "success")
 
     def test_independent_workers_receive_only_task_and_shared_rules(self):
@@ -262,7 +266,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_platform_entrypoints_infer_raw_without_platform_argument(self):
         repo = runner.SKILL_DIR.parent.parent
-        for platform in ("codex", "claude", "gemini", "opencode"):
+        for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
             platform_dir = repo / "platforms" / platform / "skills" / "moa"
             installed = self.root / platform / ".agents" / "skills" / "moa"
             installed.parent.mkdir(parents=True)
@@ -284,6 +288,7 @@ class RunnerTests(unittest.TestCase):
             (repo / "platforms/claude/skills/moa/moa_runner.py", ["--platform", "codex"], "codex", "raw"),
             (repo / "platforms/gemini/skills/moa/moa_runner.py", ["--platform", "gemini"], "gemini", "raw"),
             (repo / "platforms/opencode/skills/moa/moa_runner.py", ["--platform", "opencode"], "opencode", "raw"),
+            (repo / "platforms/cursor/skills/moa/moa_runner.py", ["--platform", "cursor"], "cursor", "raw"),
             (runner.SKILL_DIR / "moa_runner.py", ["--platform", "claude"], "claude", "raw"),
         ]
         for entry, flags, platform, mode in cases:
@@ -404,6 +409,15 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(cfg["agy_routes"]["l1"], "gemini-4-carbon-high")
         self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator", "gemini-4-carbon-high"])
 
+    def test_cursor_profile_uses_agy_orchestrator_and_raw_mode(self):
+        cfg = runner.load_config("cursor")
+        self.assertEqual(cfg["mode"], "raw")
+        self.assertEqual(cfg["worker_defaults"], ["agy", "grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(cfg["reviewer"]["provider"], "agy")
+        self.assertEqual(cfg["reviewer"]["model"], "gemini-pro-orchestrator")
+        self.assertEqual(cfg["agy_routes"]["l1"], "gemini-4-carbon-high")
+        self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator", "gemini-4-carbon-high"])
+
     def test_codex_adapter_calls_cli_without_network(self):
         codex_model = "gpt-6-astra"
         def fake_run(cmd, input=None, text=True, capture_output=True, timeout=None):
@@ -478,6 +492,293 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(record["status"], "success")
         self.assertEqual(record["mode"], "cross_review")
         self.assertIn("evidence_review", record)
+
+    def test_env_paths_order_and_load_env_first_nonempty_priority(self):
+        paths = runner.env_paths()
+        self.assertEqual(
+            paths,
+            (runner.SKILL_DIR / ".env", Path.home() / ".env", Path.home() / "Desktop" / "moa_keys.env"),
+        )
+        skill_env = self.root / "skill.env"
+        home_env = self.root / "home.env"
+        desktop_env = self.root / "desktop.env"
+        skill_env.write_text("DEEPSEEK_API_KEY=from-skill\nZHIPUAI_API_KEY=your_placeholder\nMINIMAX_API_KEY=\n")
+        home_env.write_text("DEEPSEEK_API_KEY=from-home\nexport ZHIPUAI_API_KEY='from-home'\nOPENAI_API_KEY=from-home-openai\n")
+        desktop_env.write_text("ZHIPUAI_API_KEY=from-desktop\nMINIMAX_API_KEY=\"from-desktop\"\nOPENAI_API_KEY=from-desktop-openai\n")
+
+        os.environ["OPENAI_API_KEY"] = "from-process-env"
+        with patch.object(runner, "env_paths", return_value=(skill_env, home_env, desktop_env)), \
+                patch.object(runner, "agy_executable", return_value=None), \
+                patch.object(runner, "has_opencode_xai_auth", return_value=False), \
+                patch.object(runner.shutil, "which", return_value=None):
+            _REAL_LOAD_ENV()
+
+        self.assertEqual(os.environ["OPENAI_API_KEY"], "from-process-env")
+        self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "from-skill")
+        self.assertEqual(os.environ["ZHIPUAI_API_KEY"], "from-home")
+        self.assertEqual(os.environ["MINIMAX_API_KEY"], "from-desktop")
+
+    def test_review_failover_when_primary_glm_fails(self):
+        os.environ.update(
+            ZHIPUAI_API_KEY="synthetic-glm",
+            AGY_CLI="installed",
+            DEEPSEEK_API_KEY="synthetic-ds",
+        )
+
+        def review_call(provider, prompt, api_key, model, system_prompt=None, max_tokens=None):
+            self.assertEqual(system_prompt, runner.REVIEW_RULES)
+            if provider == "glm":
+                raise ValueError("insufficient balance")
+            if provider == "agy":
+                raise RuntimeError("quota exhausted")
+            if provider == "deepseek":
+                return "deepseek fallback review"
+            raise AssertionError(f"Unexpected provider {provider}")
+
+        code, stdout, stderr, call = self.invoke(["--review", "draft to check"], side_effect=review_call)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("===MOA_REVIEW_START===\ndeepseek fallback review\n===MOA_REVIEW_END===", stdout)
+        self.assertEqual(call.call_count, 3)
+        record = self.record()
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(record["reviewer_configuration"]["provider"], "deepseek")
+        self.assertEqual(record["reviewer_configuration"]["model"], "deepseek-v4-pro")
+        self.assertEqual(record["reviewer_result"]["provider"], "deepseek")
+        self.assertEqual(record["reviewer_result"]["fallback_from"], "glm")
+        self.assertEqual(
+            [(f["provider"], f["model"]) for f in record["reviewer_fallbacks"]],
+            [("glm", "glm-5.3"), ("agy", "gemini-pro-orchestrator")],
+        )
+
+    def test_review_failover_when_primary_glm_lacks_key(self):
+        os.environ["MINIMAX_API_KEY"] = "synthetic-minimax"
+        code, stdout, stderr, call = self.invoke(["--review", "draft to check"], result="minimax fallback review")
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("===MOA_REVIEW_START===\nminimax fallback review\n===MOA_REVIEW_END===", stdout)
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual(call.call_args.args[0], "minimax")
+        record = self.record()
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(record["reviewer_configuration"]["provider"], "minimax")
+        self.assertEqual(record["reviewer_result"]["fallback_from"], "glm")
+
+    def test_review_fails_when_no_candidate_has_key(self):
+        code, stdout, stderr, call = self.invoke(["--review", "draft to check"])
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("MOA_REVIEW_START", stdout)
+        self.assertIn("Review requires a configured key for glm", stderr)
+        call.assert_not_called()
+        self.assertEqual(self.record()["status"], "failed")
+
+    def test_aggregate_failover_prefers_healthy_worker_when_primary_fails_worker_stage(self):
+        os.environ.update(DEEPSEEK_API_KEY="synthetic-ds", MINIMAX_API_KEY="synthetic-minimax")
+
+        def answer(provider, prompt, api_key, model, system_prompt=None, max_tokens=None):
+            if provider == "deepseek":
+                raise ValueError("deepseek balance exhausted")
+            if system_prompt and system_prompt.startswith("You are the Aggregator"):
+                return "synthesized by healthy minimax"
+            return "minimax worker answer"
+
+        code, stdout, stderr, call = self.invoke(["question"], side_effect=answer)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("--- FINAL SYNTHESIZED RESPONSE ---\nsynthesized by healthy minimax", stdout)
+        self.assertEqual(call.call_count, 3)
+        record = self.record()
+        self.assertEqual(record["status"], "partial_success")
+        self.assertEqual(record["aggregation_configuration"]["provider"], "minimax")
+        self.assertEqual(record["aggregation_result"]["provider"], "minimax")
+        self.assertEqual(record["aggregation_result"]["fallback_from"], "deepseek")
+
+    def test_aggregate_failover_when_first_aggregator_raises_in_aggregation_stage(self):
+        os.environ.update(
+            DEEPSEEK_API_KEY="synthetic-ds",
+            ZHIPUAI_API_KEY="synthetic-glm",
+            MINIMAX_API_KEY="synthetic-minimax",
+        )
+
+        def answer(provider, prompt, api_key, model, system_prompt=None, max_tokens=None):
+            if system_prompt and system_prompt.startswith("You are the Aggregator"):
+                if provider == "deepseek":
+                    raise ValueError("deepseek quota hit on synthesis")
+                if provider == "glm":
+                    return "synthesized by glm-5.3"
+                raise AssertionError(f"Should not reach {provider} after glm succeeded")
+            return f"{provider} draft"
+
+        code, stdout, stderr, call = self.invoke(["question"], side_effect=answer)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("--- FINAL SYNTHESIZED RESPONSE ---\nsynthesized by glm-5.3", stdout)
+        self.assertEqual(call.call_count, 5)
+        record = self.record()
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(record["aggregation_configuration"]["provider"], "glm")
+        self.assertEqual(record["aggregation_configuration"]["model"], "glm-5.3")
+        self.assertEqual(record["aggregation_result"]["provider"], "glm")
+        self.assertEqual(record["aggregation_result"]["fallback_from"], "deepseek")
+        self.assertEqual(
+            record["aggregation_fallbacks"],
+            [{
+                "provider": "deepseek",
+                "model": "deepseek-v4-pro",
+                "error": "ValueError: deepseek quota hit on synthesis",
+            }],
+        )
+
+    def test_cross_review_synthesizer_failover_when_primary_fails_stage4(self):
+        os.environ.update(DEEPSEEK_API_KEY="test-ds", MINIMAX_API_KEY="test-minimax")
+
+        def mock_call(provider, prompt, api_key, model, system_prompt=None, max_tokens=None):
+            if "Candidate to Review" in prompt or "expert reviewer" in (system_prompt or ""):
+                payload = {
+                    "review_id": f"rev-{provider}", "reviewer": provider, "target_participant": "target",
+                    "target_version": 1, "no_substantive_issues": True, "issues": []
+                }
+            elif "original author" in (system_prompt or ""):
+                payload = {
+                    "revision_id": f"rev-{provider}-v2", "participant": provider, "version": 2,
+                    "issue_responses": [], "revised_summary": "revised", "revised_answer": "revised"
+                }
+            elif "Lead Synthesizer" in (system_prompt or ""):
+                if provider == "deepseek":
+                    raise ValueError("deepseek synthesis failed")
+                payload = {
+                    "synthesis_id": "syn", "usable_answer": "Fallback Synthesis by MiniMax",
+                    "supported_points": ["Point A"], "unresolved_disagreements": [],
+                    "evidence_gaps": [], "next_checks": [], "limitations": [], "stop_reason": "completed"
+                }
+            else:
+                payload = {
+                    "answer_id": f"ans-{provider}-v1", "participant": provider, "version": 1,
+                    "summary": "initial summary", "claims": [{"claim_id": "c1", "statement": "st", "claim_type": "fact"}],
+                    "full_answer": "initial full answer"
+                }
+            return json.dumps(payload)
+
+        code, stdout, stderr, _ = self.invoke(["--models", "deepseek,minimax", "--cross-review", "question"], side_effect=mock_call)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Fallback Synthesis by MiniMax", stdout)
+        record = self.record()
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(record["synthesis_fallbacks"][0]["provider"], "deepseek")
+
+    def test_has_opencode_xai_auth_reads_sqlite_readonly(self):
+        xdg_data = self.root / "xdg_data"
+        db_dir = xdg_data / "opencode"
+        db_dir.mkdir(parents=True)
+        db_path = db_dir / "opencode.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE credential (id TEXT, integration_id TEXT, active INTEGER)")
+        conn.execute("INSERT INTO credential VALUES ('c1', 'xai', 0)")
+        conn.commit()
+        conn.close()
+
+        os.environ["XDG_DATA_HOME"] = str(xdg_data)
+        with patch.object(runner, "opencode_executable", return_value="/usr/local/bin/opencode"):
+            self.assertFalse(runner.has_opencode_xai_auth())
+            conn = sqlite3.connect(db_path)
+            conn.execute("UPDATE credential SET active = 1 WHERE id = 'c1'")
+            conn.commit()
+            conn.close()
+            self.assertTrue(runner.has_opencode_xai_auth())
+
+        with patch.object(runner, "opencode_executable", return_value=None):
+            self.assertFalse(runner.has_opencode_xai_auth())
+
+    def test_grok_opencode_oauth_adapter_and_http_fallback_without_network(self):
+        settings = runner.load_config("headless")["providers"]["grok"]
+        self.assertEqual(settings["model"], "grok-4.7")
+        self.assertEqual(settings["display_name"], "Grok-4.7")
+
+        def fake_run(cmd, cwd=None, env=None, text=True, capture_output=True, timeout=None):
+            self.assertEqual(cmd[:7], ["/usr/local/bin/opencode", "run", "--archived", "--agent", "plan", "--format", "json"])
+            self.assertEqual(cmd[cmd.index("-m") + 1], "xai/grok-4.7")
+            self.assertIn("--", cmd)
+            prompt_arg = cmd[-1]
+            self.assertIn(runner.WORKER_RULES, prompt_arg)
+            self.assertIn("question", prompt_arg)
+            self.assertTrue(cwd and Path(cwd).is_dir())
+            self.assertNotIn("DEEPSEEK_API_KEY", env)
+            events = [
+                json.dumps({"type": "step_start"}),
+                json.dumps({"type": "text", "part": {"type": "text", "text": "grok subscription answer"}}),
+                json.dumps({"type": "step_finish", "part": {"reason": "stop"}}),
+            ]
+            return subprocess.CompletedProcess(cmd, 0, stdout="\n".join(events) + "\n", stderr="")
+
+        os.environ["DEEPSEEK_API_KEY"] = "secret-must-not-leak"
+        with patch.object(runner, "opencode_executable", return_value="/usr/local/bin/opencode"), \
+                patch.object(runner.subprocess, "run", side_effect=fake_run) as mock_sub:
+            answer = runner.call_model("grok", "question", "opencode-oauth", settings["model"],
+                                       system_prompt=runner.WORKER_RULES)
+            self.assertEqual(answer, "grok subscription answer")
+            mock_sub.assert_called_once()
+            self.network.assert_not_called()
+
+        # When opencode subscription call fails and XAI_API_KEY is present, fall back to direct xAI HTTP API.
+        os.environ["XAI_API_KEY"] = "synthetic-xai-key"
+        self.network.side_effect = None
+        self.network.return_value = io.BytesIO(b'{"choices":[{"message":{"content":"grok http fallback"}}]}')
+        fail_proc = subprocess.CompletedProcess(["opencode"], 1, stdout="", stderr="oauth expired")
+        with patch.object(runner, "opencode_executable", return_value="/usr/local/bin/opencode"), \
+                patch.object(runner.subprocess, "run", return_value=fail_proc):
+            answer = runner.call_model("grok", "question", "opencode-oauth", "xai/grok-4.7",
+                                       system_prompt=runner.WORKER_RULES)
+            self.assertEqual(answer, "grok http fallback")
+            req = self.network.call_args.args[0]
+            self.assertEqual(req.full_url, runner.ENDPOINTS["grok"])
+            self.assertEqual(req.get_header("Authorization"), "Bearer synthetic-xai-key")
+            payload = json.loads(req.data)
+            self.assertEqual(payload["model"], "grok-4.7")
+
+    def test_explicit_timeout_overrides_grok_cli_minimum(self):
+        events = [
+            json.dumps({"type": "text", "part": {"type": "text", "text": "PONG"}}),
+        ]
+        proc = subprocess.CompletedProcess(["opencode"], 0, stdout="\n".join(events) + "\n", stderr="")
+        with patch.object(runner, "opencode_executable", return_value="/usr/local/bin/opencode"), \
+                patch.object(runner.subprocess, "run", return_value=proc) as mock_sub:
+            answer = runner.call_model("grok", "Ping", "opencode-oauth", "grok-4.7", max_tokens=128, timeout=25)
+            self.assertEqual(answer, "PONG")
+            self.assertEqual(mock_sub.call_args.kwargs["timeout"], 35)
+
+    def test_doctor_command_probes_providers_and_reports_table(self):
+        os.environ.update(OPENCODE_XAI_AUTH="opencode-oauth", DEEPSEEK_API_KEY="synthetic-key")
+        recorded = {}
+
+        def probe(provider, prompt, api_key, model, system_prompt=None, max_tokens=None, timeout=None):
+            recorded[provider] = (api_key, model, max_tokens, timeout)
+            return "PONG"
+
+        code, stdout, stderr, _ = self.invoke(["--models", "grok,deepseek", "--doctor"], side_effect=probe)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("MoA Provider Health & Latency Check", stdout)
+        self.assertIn("OAuth CLI", stdout)
+        self.assertIn("API", stdout)
+        self.assertIn("✅ OK", stdout)
+        self.assertIn("Summary: 2/2 providers healthy.", stdout)
+        self.assertEqual(recorded["grok"], ("opencode-oauth", "grok-4.7", 128, 35))
+        self.assertEqual(recorded["deepseek"], ("synthetic-key", "deepseek-v4-pro", 128, 20))
+        self.assertFalse(runner.RUNS_DIR.exists())
+
+    def test_doctor_command_reports_no_auth_when_keys_missing(self):
+        code, stdout, stderr, call = self.invoke(["--doctor", "--models", "deepseek"])
+        self.assertEqual(code, 1, stderr)
+        self.assertIn("⚠️ No Auth", stdout)
+        self.assertIn("Summary: 0/1 providers healthy.", stdout)
+        call.assert_not_called()
+
+    def test_doctor_command_handles_provider_errors(self):
+        os.environ["DEEPSEEK_API_KEY"] = "synthetic-secret"
+        code, stdout, stderr, _ = self.invoke(
+            ["--doctor", "--models", "deepseek"],
+            side_effect=RuntimeError("synthetic-secret refused"),
+        )
+        self.assertEqual(code, 1, stderr)
+        self.assertIn("❌ Error", stdout)
+        self.assertIn("[REDACTED]", stdout)
+        self.assertNotIn("synthetic-secret", stdout)
+        self.assertIn("Summary: 0/1 providers healthy.", stdout)
 
 
 if __name__ == "__main__":

@@ -9,9 +9,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +27,7 @@ CONFIG_DIR = SKILL_DIR.parent.parent / "config"
 RUNS_DIR = SKILL_DIR / "runs"
 KEY_NAMES = {
     "agy": ("AGY_CLI", "AGY_AUTH"),
+    "grok": ("OPENCODE_XAI_AUTH", "XAI_API_KEY", "GROK_API_KEY"),
     "openai": ("OPENAI_API_KEY",),
     "anthropic": ("ANTHROPIC_API_KEY",),
     "glm": ("ZHIPUAI_API_KEY", "ZHIPU_API_KEY"),
@@ -35,6 +38,7 @@ KEY_NAMES = {
 }
 
 ENDPOINTS = {
+    "grok": "https://api.x.ai/v1/chat/completions",
     "openai": "https://api.openai.com/v1/chat/completions",
     "anthropic": "https://api.anthropic.com/v1/messages",
     "glm": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
@@ -96,7 +100,7 @@ def load_config(platform):
 
 
 def env_paths():
-    return (SKILL_DIR / ".env", Path.home() / "Desktop" / "moa_keys.env")
+    return (SKILL_DIR / ".env", Path.home() / ".env", Path.home() / "Desktop" / "moa_keys.env")
 
 
 def agy_executable():
@@ -107,8 +111,42 @@ def agy_executable():
     return str(fallback) if fallback.is_file() else None
 
 
+def opencode_executable():
+    found = shutil.which("opencode")
+    if found:
+        return found
+    for candidate in (Path.home() / ".opencode" / "bin" / "opencode",
+                      Path.home() / ".local" / "bin" / "opencode"):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def has_opencode_xai_auth():
+    if not opencode_executable():
+        return False
+    xdg_data = os.environ.get("XDG_DATA_HOME")
+    data_root = Path(xdg_data) if xdg_data else (Path.home() / ".local" / "share")
+    db_path = data_root / "opencode" / "opencode.db"
+    if not db_path.is_file():
+        return False
+    conn = None
+    try:
+        uri = f"{db_path.resolve().as_uri()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=1.0)
+        row = conn.execute(
+            "SELECT 1 FROM credential WHERE integration_id = 'xai' AND active = 1 LIMIT 1"
+        ).fetchone()
+        return row is not None
+    except (OSError, ValueError, sqlite3.Error):
+        return False
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def load_env():
-    # Resolve symlinks to share one key file. Environment > local file > Desktop fallback.
+    # Resolve symlinks to share one key file. Environment > local file > home .env > Desktop fallback.
     for path in env_paths():
         if not path.exists():
             continue
@@ -116,12 +154,17 @@ def load_env():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, value = line.split("=", 1)
+                key = key.strip()
+                if key.startswith("export "):
+                    key = key[len("export "):].strip()
                 value = value.strip().strip('"').strip("'")
-                if value and "your_" not in value:
-                    if not os.environ.get(key.strip()):
-                        os.environ[key.strip()] = value
+                if key and value and "your_" not in value:
+                    if not os.environ.get(key):
+                        os.environ[key] = value
     if agy_executable() and not os.environ.get("AGY_CLI"):
         os.environ["AGY_CLI"] = "installed"
+    if has_opencode_xai_auth() and not os.environ.get("OPENCODE_XAI_AUTH"):
+        os.environ["OPENCODE_XAI_AUTH"] = "opencode-oauth"
     if shutil.which("codex") and not os.environ.get("CODEX_CLI"):
         os.environ["CODEX_CLI"] = "installed"
 
@@ -130,7 +173,7 @@ def provider_key(provider):
     return next((os.environ[name] for name in KEY_NAMES[provider] if os.environ.get(name)), None)
 
 
-def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=None, timeout=90):
+def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=None, timeout=None):
     """Only external providers reach this adapter; native role IDs are never dispatched."""
     if provider not in KEY_NAMES:
         raise ValueError(f"Unknown external API provider: {provider}")
@@ -141,7 +184,7 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
                       else [agy_bin])
         full_prompt = (f"<system_instructions>\n{system_prompt}\n</system_instructions>\n\n{prompt}"
                        if system_prompt else prompt)
-        eff_timeout = max(timeout, 180)
+        eff_timeout = 180 if timeout is None else timeout
         safe_env = {k: os.environ[k] for k in ("PATH", "HOME", "USER", "LOGNAME", "SHELL",
                                                "LANG", "TERM", "TMPDIR", "DBUS_SESSION_BUS_ADDRESS")
                     if k in os.environ}
@@ -159,7 +202,7 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
                 "--print-timeout", f"{eff_timeout}s",
             ]
             proc = subprocess.run(cmd, cwd=tmp_cwd, env=safe_env, text=True,
-                                  capture_output=True, timeout=eff_timeout + 30)
+                                  capture_output=True, timeout=eff_timeout + (30 if timeout is None else 10))
         resp = {}
         for line in reversed((proc.stdout or "").strip().splitlines()):
             try:
@@ -181,6 +224,7 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
         full_prompt = prompt
         if system_prompt:
             full_prompt = f"<system_instructions>\n{system_prompt}\n</system_instructions>\n\n{prompt}"
+        eff_timeout = 90 if timeout is None else timeout
         with tempfile.NamedTemporaryFile(mode="r", delete=False) as out_f:
             out_path = out_f.name
         try:
@@ -191,7 +235,7 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
                 "-m", model or "gpt-6-astra",
                 "-"
             ]
-            proc = subprocess.run(cmd, input=full_prompt, text=True, capture_output=True, timeout=timeout)
+            proc = subprocess.run(cmd, input=full_prompt, text=True, capture_output=True, timeout=eff_timeout)
             if proc.returncode != 0:
                 raise RuntimeError(f"codex exec failed (exit {proc.returncode}): {proc.stderr.strip()[:1000]}")
             with open(out_path, "r", encoding="utf-8", errors="replace") as f:
@@ -205,6 +249,69 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
         if not isinstance(content, str) or not content.strip():
             raise ValueError("Empty or invalid model response from Codex")
         return content.strip()
+    if provider == "grok" and api_key == "opencode-oauth":
+        direct_key = next((os.environ[k] for k in ("XAI_API_KEY", "GROK_API_KEY") if os.environ.get(k)), None)
+        try:
+            oc_bin = opencode_executable() or "opencode"
+            target_model = model or "grok-4.7"
+            if "/" not in target_model:
+                target_model = f"xai/{target_model}"
+            full_prompt = (f"<system_instructions>\n{system_prompt}\n</system_instructions>\n\n{prompt}"
+                           if system_prompt else prompt)
+            eff_timeout = 120 if timeout is None else timeout
+            safe_env = {
+                k: os.environ[k]
+                for k in ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM", "TMPDIR",
+                          "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "DBUS_SESSION_BUS_ADDRESS")
+                if k in os.environ
+            }
+            path_parts = [p for p in safe_env.get("PATH", "").split(os.pathsep) if p]
+            for extra_dir in (str(Path.home() / ".opencode" / "bin"), str(Path.home() / ".local" / "bin")):
+                if extra_dir not in path_parts:
+                    path_parts.insert(0, extra_dir)
+            safe_env["PATH"] = os.pathsep.join(path_parts)
+            with tempfile.TemporaryDirectory(prefix="moa-grok-") as tmp_cwd:
+                cmd = [
+                    oc_bin, "run", "--archived", "--agent", "plan",
+                    "--format", "json", "-m", target_model, "--", full_prompt,
+                ]
+                proc = subprocess.run(cmd, cwd=tmp_cwd, env=safe_env, text=True,
+                                      capture_output=True, timeout=eff_timeout + (15 if timeout is None else 10))
+            chunks = []
+            errors = []
+            for line in (proc.stdout or "").splitlines():
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(ev, dict):
+                    continue
+                etype = ev.get("type")
+                if etype == "text":
+                    part = ev.get("part") if isinstance(ev.get("part"), dict) else {}
+                    txt = part.get("text") if isinstance(part.get("text"), str) else ev.get("text")
+                    if isinstance(txt, str) and txt:
+                        chunks.append(txt)
+                elif etype == "error":
+                    err_obj = ev.get("error")
+                    if isinstance(err_obj, dict):
+                        errors.append(str(err_obj.get("message") or err_obj))
+                    elif err_obj is not None:
+                        errors.append(str(err_obj))
+            content = "".join(chunks).strip()
+            if proc.returncode != 0 or (errors and not content):
+                detail = "; ".join(errors) or (proc.stderr or "").strip() or (proc.stdout or "").strip()
+                raise RuntimeError(f"opencode grok failed (exit {proc.returncode}): {detail[:1000]}")
+            if not content:
+                raise ValueError("Empty or invalid model response from opencode grok")
+            return content
+        except Exception:
+            if not direct_key:
+                raise
+            api_key = direct_key
 
     headers = {"Content-Type": "application/json"}
 
@@ -231,6 +338,8 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
     else:
         url = ENDPOINTS[provider]
         headers["Authorization"] = f"Bearer {api_key}"
+        if provider == "grok" and isinstance(model, str) and model.startswith("xai/"):
+            model = model.split("/", 1)[1]
         messages = [{"role": "user", "content": prompt}]
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
@@ -238,8 +347,9 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
         if max_tokens:
             data["max_tokens"] = max_tokens
 
+    http_timeout = 90 if timeout is None else timeout
     request = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=http_timeout) as response:
         if provider == "gemini":
             chunks = []
             for raw in response:
@@ -335,7 +445,7 @@ def default_platform():
     # Resolve directory symlinks (installed skills), but preserve the script's
     # entrypoint directory: resolving the file itself would erase the platform.
     entry_dir = Path(__file__).absolute().parent.resolve()
-    for platform in ("codex", "claude", "gemini", "opencode"):
+    for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
         if entry_dir == SKILL_DIR.parent.parent / "platforms" / platform / "skills" / "moa":
             return platform
     return "headless"
@@ -344,7 +454,7 @@ def default_platform():
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("prompt", nargs="?")
-    result.add_argument("--platform", choices=("codex", "claude", "gemini", "opencode", "headless"), default=default_platform(),
+    result.add_argument("--platform", choices=("codex", "claude", "gemini", "opencode", "cursor", "headless"), default=default_platform(),
                         help="Defaults to the platform entrypoint, or headless for the shared script")
     result.add_argument("--coordinator-model", default="current", help="Session model metadata; never an API provider")
     result.add_argument("--task-id")
@@ -355,6 +465,8 @@ def parser():
                         help="Run multi-stage evidence-based cross-review and revision")
     result.add_argument("--cycles", type=int, choices=(1, 2), default=1,
                         help="Number of cross-review cycles (default: 1, max: 2)")
+    result.add_argument("--doctor", "--status", dest="doctor", action="store_true",
+                        help="Probe and report health and latency for configured external and local providers")
     result.add_argument("--show-config", "--dry-run", dest="show_config", action="store_true",
                         help="Show effective routing without loading credentials or calling APIs")
     return result
@@ -382,8 +494,80 @@ def main(argv=None):
                           "coordinator_model": args.coordinator_model, "task_id": args.task_id,
                           "selected_workers": worker_configuration}, ensure_ascii=False, indent=2))
         return 0
+    if args.doctor:
+        load_env()
+        targets = [p for p in selected if p in config["providers"]] if args.models is not None else list(config["providers"].keys())
+        providers = {p: config["providers"][p] for p in targets}
+        print(f"MoA Provider Health & Latency Check ({args.platform} profile)")
+        print("-" * 82)
+
+        def probe_provider(name):
+            settings = providers[name]
+            key = provider_key(name)
+            ptype = (
+                "Local CLI" if name in ("agy", "codex")
+                else "OAuth CLI" if (name == "grok" and key == "opencode-oauth")
+                else "API"
+            )
+            if not key:
+                return {
+                    "provider": name,
+                    "model": settings["model"],
+                    "type": ptype,
+                    "status": "⚠️ No Auth",
+                    "latency": "-",
+                    "details": "Key missing or CLI not found",
+                }
+            probe_timeout = 35 if ptype != "API" else 20
+            t0 = time.monotonic()
+            try:
+                res = call_model(
+                    name,
+                    "Ping: reply with PONG",
+                    key,
+                    settings["model"],
+                    max_tokens=128,
+                    timeout=probe_timeout,
+                )
+                latency = int((time.monotonic() - t0) * 1000)
+                details = res.replace("\n", " ").strip()
+                if len(details) > 30:
+                    details = details[:27] + "..."
+                return {
+                    "provider": name,
+                    "model": settings["model"],
+                    "type": ptype,
+                    "status": "✅ OK",
+                    "latency": f"{latency}ms",
+                    "details": details,
+                }
+            except Exception as e:
+                latency = int((time.monotonic() - t0) * 1000)
+                err_msg = error_text(e, key).replace("\n", " ").strip()
+                if len(err_msg) > 40:
+                    err_msg = err_msg[:37] + "..."
+                return {
+                    "provider": name,
+                    "model": settings["model"],
+                    "type": ptype,
+                    "status": "❌ Error",
+                    "latency": f"{latency}ms",
+                    "details": err_msg,
+                }
+
+        with ThreadPoolExecutor(max_workers=max(1, len(targets))) as executor:
+            results = list(executor.map(probe_provider, targets))
+
+        print(f"{'Provider':<12} {'Model':<26} {'Type':<11} {'Status':<11} {'Latency':<10} {'Details'}")
+        print("-" * 82)
+        for r in results:
+            print(f"{r['provider']:<12} {r['model']:<26} {r['type']:<11} {r['status']:<11} {r['latency']:<10} {r['details']}")
+        print("-" * 82)
+        ok_count = sum(1 for r in results if "✅" in r["status"])
+        print(f"Summary: {ok_count}/{len(results)} providers healthy.")
+        return 0 if ok_count > 0 else 1
     if not args.prompt:
-        cli.error("a prompt is required unless --show-config or --dry-run is used")
+        cli.error("a prompt is required unless --show-config, --dry-run or --doctor is used")
 
     record = {
         "schema_version": 1, "prompt_version": PROMPT_VERSION, "run_id": str(uuid.uuid4()), "platform": args.platform,
@@ -414,20 +598,41 @@ def main(argv=None):
         return finish("failed", error_text(error))
 
     if mode == "review":
-        reviewer = config["reviewer"]
-        record["reviewer_configuration"] = reviewer
-        provider = reviewer["provider"]
-        key = provider_key(provider)
-        if not key:
-            return finish("failed", f"Review requires a configured key for {provider}")
-        result = run_worker(provider, reviewer, args.prompt, key, system_prompt=REVIEW_RULES, max_tokens=4096)
+        primary_reviewer = dict(config["reviewer"])
+        record["reviewer_configuration"] = primary_reviewer
+        candidates = [primary_reviewer] + [
+            {"provider": p, **config["providers"][p]}
+            for p in config["aggregation_priority"]
+            if p != primary_reviewer["provider"] and p in config["providers"]
+        ]
+        keyed_candidates = [
+            (cand, key)
+            for cand in candidates
+            if (key := provider_key(cand["provider"]))
+        ]
+        if not keyed_candidates:
+            return finish("failed", f"Review requires a configured key for {primary_reviewer['provider']}")
+        result = None
+        for idx, (cand, key) in enumerate(keyed_candidates):
+            prov = cand["provider"]
+            result = run_worker(prov, cand, args.prompt, key, system_prompt=REVIEW_RULES, max_tokens=4096)
+            if result["status"] == "success":
+                if prov != primary_reviewer["provider"] or record.get("reviewer_fallbacks"):
+                    result["fallback_from"] = primary_reviewer["provider"]
+                    record["reviewer_configuration"] = cand
+                record["reviewer_result"] = result
+                print("===MOA_REVIEW_START===")
+                print(result["response"])
+                print("===MOA_REVIEW_END===")
+                return finish("success")
+            if idx + 1 < len(keyed_candidates):
+                record.setdefault("reviewer_fallbacks", []).append({
+                    "provider": prov,
+                    "model": cand["model"],
+                    "error": result.get("error"),
+                })
         record["reviewer_result"] = result
-        if result["status"] != "success":
-            return finish("failed", f"Review failed: {result['error']}")
-        print("===MOA_REVIEW_START===")
-        print(result["response"])
-        print("===MOA_REVIEW_END===")
-        return finish("success")
+        return finish("failed", f"Review failed: {result['error']}")
 
     keys = {name: provider_key(name) for name in selected}
     missing = [name for name, key in keys.items() if not key]
@@ -439,11 +644,11 @@ def main(argv=None):
         return finish("failed", "No API keys configured for selected workers")
 
     # Explicit worker selection also limits the paid aggregator's provider pool.
-    aggregator = next((name for name in config["aggregation_priority"] if name in active), None)
-    if mode == "aggregate" and aggregator is None:
+    agg_candidates = [name for name in config["aggregation_priority"] if name in active]
+    if mode == "aggregate" and not agg_candidates:
         return finish("failed", "No aggregator is available for selected providers; use --raw or include an aggregator provider")
     if mode == "aggregate":
-        record["aggregation_configuration"] = {"provider": aggregator, **config["providers"][aggregator]}
+        record["aggregation_configuration"] = {"provider": agg_candidates[0], **config["providers"][agg_candidates[0]]}
 
     if mode == "cross_review":
         if len(active) < 2:
@@ -452,11 +657,31 @@ def main(argv=None):
         er = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(er)
 
+        synth_order = list(dict.fromkeys(agg_candidates + list(active.keys())))
+
         def call_fn(provider, prompt, system_prompt):
             key = active.get(provider) or provider_key(provider)
             if not key:
                 return {"status": "failed", "error": f"Missing API key for {provider}"}
-            return run_worker(provider, config["providers"][provider], prompt, key, system_prompt=system_prompt, max_tokens=4096)
+            res = run_worker(provider, config["providers"][provider], prompt, key, system_prompt=system_prompt, max_tokens=4096)
+            if res["status"] != "success" and "Lead Synthesizer" in (system_prompt or ""):
+                for alt in synth_order:
+                    if alt == provider:
+                        continue
+                    alt_key = active.get(alt) or provider_key(alt)
+                    if not alt_key:
+                        continue
+                    record.setdefault("synthesis_fallbacks", []).append({
+                        "provider": provider,
+                        "model": config["providers"][provider]["model"],
+                        "error": res.get("error"),
+                    })
+                    provider = alt
+                    res = run_worker(alt, config["providers"][alt], prompt, alt_key, system_prompt=system_prompt, max_tokens=4096)
+                    if res["status"] == "success":
+                        res["fallback_from"] = synth_order[0]
+                        break
+            return res
 
         print(f"Starting MoA Cross-Review ({args.cycles} cycle{'s' if args.cycles > 1 else ''}) with {len(active)} models: " +
               ", ".join(config["providers"][name]["display_name"] for name in active))
@@ -465,7 +690,7 @@ def main(argv=None):
             participants=list(active.keys()),
             call_fn=call_fn,
             cycles=args.cycles,
-            synthesizer=aggregator or list(active.keys())[0]
+            synthesizer=agg_candidates[0] if agg_candidates else list(active.keys())[0]
         )
         trace = orchestrator.run()
         record["evidence_review"] = trace
@@ -511,12 +736,27 @@ def main(argv=None):
         print("===MOA_RAW_JSON_END===")
     else:
         system, content = aggregate_prompt(args.prompt, responses)
-        result = run_worker(aggregator, config["providers"][aggregator], content, active[aggregator], system_prompt=system)
+        initial_agg = agg_candidates[0]
+        ordered_agg = [p for p in agg_candidates if p not in failures] + [p for p in agg_candidates if p in failures]
+        result = None
+        for idx, cand_agg in enumerate(ordered_agg):
+            record["aggregation_configuration"] = {"provider": cand_agg, **config["providers"][cand_agg]}
+            result = run_worker(cand_agg, config["providers"][cand_agg], content, active[cand_agg], system_prompt=system)
+            if result["status"] == "success":
+                if cand_agg != initial_agg or record.get("aggregation_fallbacks"):
+                    result["fallback_from"] = initial_agg
+                record["aggregation_result"] = result
+                print("--- FINAL SYNTHESIZED RESPONSE ---")
+                print(result["response"])
+                return finish("partial_success" if failures else "success")
+            if idx + 1 < len(ordered_agg):
+                record.setdefault("aggregation_fallbacks", []).append({
+                    "provider": cand_agg,
+                    "model": config["providers"][cand_agg]["model"],
+                    "error": result.get("error"),
+                })
         record["aggregation_result"] = result
-        if result["status"] != "success":
-            return finish("failed", f"Aggregation failed: {result['error']}")
-        print("--- FINAL SYNTHESIZED RESPONSE ---")
-        print(result["response"])
+        return finish("failed", f"Aggregation failed: {result['error']}")
     return finish("partial_success" if failures else "success")
 
 

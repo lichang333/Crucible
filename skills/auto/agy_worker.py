@@ -12,7 +12,7 @@ user's current HEAD, and `apply` has re-checked sha, HEAD, cleanliness and flags
   agy_worker.py resume RUN_ID --brief FILE [--timeout S]       # send-back round, same conversation
   agy_worker.py test   RUN_ID -- CMD [ARGS...]                 # quick sandboxed run in the worker tree
   agy_worker.py verify RUN_ID [--full] [--onto REF] -- CMD ... # patch -> fresh tree -> sandboxed CMD
-  agy_worker.py review RUN_ID [--executor agy|codex] [--model M] [--timeout S] [--json]
+  agy_worker.py review RUN_ID [--executor agy|api|auto|codex] [--model M] [--timeout S] [--json]
   agy_worker.py apply  RUN_ID --sha SHA256 [--allow-protected] [--allow-binary]
   agy_worker.py record RUN_ID --level L1 --outcome accepted|fixed|rejected [--notes TEXT] [--defects a,b]
   agy_worker.py clean  RUN_ID
@@ -28,9 +28,11 @@ import contextlib
 import datetime
 import fcntl
 import hashlib
+import importlib.util
 import json
 import math
 import os
+from pathlib import Path
 import re
 import shlex
 import shutil
@@ -61,7 +63,7 @@ SAFE_GIT = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", "-c", "co
 ATTR_OFF = [f"--attr-source={EMPTY_TREE}"]
 GIT_ENV = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
 # Paths that need Claude's explicit, line-by-line attention (reported in every summary).
-PROTECTED_RE = re.compile(r"(^|/)(\.git|\.claude|\.codex|\.opencode|\.agents?|_agents?|\.gemini|\.github|\.vscode|\.idea|\.?venv|node_modules)(/|$)"
+PROTECTED_RE = re.compile(r"(^|/)(\.git|\.claude|\.codex|\.opencode|\.cursor|\.agents?|_agents?|\.gemini|\.github|\.vscode|\.idea|\.?venv|node_modules)(/|$)"
                           r"|(^|/)(agents\.md|gemini\.md|claude\.md|\.gitmodules|\.gitignore|\.gitattributes|\.envrc"
                           r"|\.flaskenv|\.pre-commit-config\.ya?ml|sitecustomize\.py|usercustomize\.py)$|\.pth$", re.I)
 SENSITIVE_RE = re.compile(r"(^|/)(deploy|node-managers|scripts|migrations)/|^(run\.sh|wsgi\.py|requirements[^/]*\.txt"
@@ -75,7 +77,7 @@ PREAMBLE = """You are a coding worker. Rules for this run (enforced by a guard; 
 - Shell: one simple command per call (no pipes, ;, &&, redirects, $()), read-only tools, git
   status/diff/log/show, `python -m pytest`, `node --test`. No network, no installs, no ssh, no git
   commit/push. If something you need is denied, say so in your final reply instead of working around it.
-- Do not edit AGENTS.md, .gitignore, .gitattributes, .git, .claude, .codex, .opencode, .agents, .github or venv files.
+- Do not edit AGENTS.md, .gitignore, .gitattributes, .git, .claude, .codex, .opencode, .cursor, .agents, .github or venv files.
 - Do not leave background processes running when you finish.
 - Finish with a short report: what you changed (files), what you verified (exact test commands and
   results), and anything you were unsure about or could not do.
@@ -1064,6 +1066,140 @@ def cmd_record(a):
     print(json.dumps(entry, ensure_ascii=False))
 
 
+API_PROVIDERS = ("grok", "deepseek", "glm", "minimax")
+
+
+def _load_moa_runner():
+    """Import skills/moa/moa_runner.py safely across symlinked entrypoints."""
+    moa_path = Path(__file__).resolve().parent.parent / "moa" / "moa_runner.py"
+    if not moa_path.is_file():
+        raise FileNotFoundError(f"moa_runner.py not found at {moa_path}")
+    spec = importlib.util.spec_from_file_location("moa_runner", str(moa_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"unable to load moa_runner.py from {moa_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _infer_api_target(model_arg):
+    """Identify an API provider and optional explicit model ID from --model."""
+    if not isinstance(model_arg, str) or not model_arg.strip():
+        return None, None
+    raw = model_arg.strip()
+    lower = raw.lower()
+    if lower in ("grok", "xai", "deepseek", "glm", "zhipu", "minimax"):
+        prov = "grok" if lower == "xai" else ("glm" if lower == "zhipu" else lower)
+        return prov, None
+    if "/" in raw:
+        prov_part, model_part = raw.split("/", 1)
+        prov_low = prov_part.strip().lower()
+        if prov_low in ("grok", "xai", "deepseek", "glm", "zhipu", "minimax"):
+            prov = "grok" if prov_low == "xai" else ("glm" if prov_low == "zhipu" else prov_low)
+            return prov, (model_part.strip() or None)
+        return None, None
+    for prefix, prov in (("grok-", "grok"), ("deepseek-", "deepseek"), ("glm-", "glm"), ("minimax-", "minimax")):
+        if lower.startswith(prefix):
+            return prov, raw
+    return None, None
+
+
+def _run_api_review(review_prompt, requested_model, prior_fallbacks=None):
+    """Run read-only patch review across configured prepaid API providers with failover."""
+    try:
+        runner = _load_moa_runner()
+        runner.load_env()
+        cfg = runner.load_config("headless")
+    except Exception as exc:
+        msg = f"REFUSED: api review failed to load moa_runner: {exc}"
+        if prior_fallbacks:
+            msg += f" (prior agy failures: {json.dumps(prior_fallbacks, ensure_ascii=False)})"
+        sys.exit(msg)
+
+    providers_cfg = cfg.get("providers") or {}
+    req_prov, req_explicit_model = _infer_api_target(requested_model)
+    order = []
+    if req_prov and req_prov in providers_cfg:
+        order.append(req_prov)
+    for prov in API_PROVIDERS:
+        if prov in providers_cfg and prov not in order:
+            order.append(prov)
+
+    keyed = [(prov, runner.provider_key(prov)) for prov in order]
+    keyed = [(prov, key) for prov, key in keyed if key]
+    if not keyed:
+        msg = "REFUSED: api review requires at least one configured key for grok, deepseek, glm, or minimax."
+        if prior_fallbacks:
+            msg += f" (prior agy failures: {json.dumps(prior_fallbacks, ensure_ascii=False)})"
+        sys.exit(msg)
+
+    fallbacks = []
+    for prov, key in keyed:
+        settings = dict(providers_cfg[prov])
+        if prov == req_prov and req_explicit_model:
+            settings["model"] = req_explicit_model
+        res = runner.run_worker(
+            prov,
+            settings,
+            review_prompt,
+            key,
+            system_prompt=runner.REVIEW_RULES,
+            max_tokens=4096,
+        )
+        if isinstance(res, dict) and res.get("status") == "success":
+            text = res.get("response")
+            if isinstance(text, str) and text.strip():
+                return prov, settings["model"], text.strip(), fallbacks
+            err = "empty response"
+        else:
+            err = (res.get("error") if isinstance(res, dict) else None) or "unknown api error"
+        fallbacks.append({"executor": "api", "provider": prov, "model": settings["model"], "error": err})
+
+    summary = "; ".join(f"{fb['provider']}({fb['model']}): {fb['error']}" for fb in fallbacks)
+    msg = f"REFUSED: api review failed across all configured providers: {summary}"
+    if prior_fallbacks:
+        msg += f" (prior agy failures: {json.dumps(prior_fallbacks, ensure_ascii=False)})"
+    sys.exit(msg)
+
+
+def _run_agy_review_once(model_id, review_prompt, timeout, agy_bin=None):
+    """Execute one read-only `agy --mode plan` review; returns (ok, text, err, timed_out)."""
+    agy_bin = agy_bin or find_agy_bin()
+    if not agy_bin:
+        return False, None, "`agy` command line tool is not found on PATH or ~/.local/bin/agy.", False
+    cmd_prefix, env = agy_cmd_prefix_and_env(agy_bin)
+    with tempfile.TemporaryDirectory(prefix="auto-review-") as tmp_cwd:
+        cmd = [
+            *cmd_prefix, "-p", review_prompt,
+            "--model", model_id,
+            "--mode", "plan",
+            "--disable-slash-commands",
+            "--output-format", "json",
+            "--print-timeout", f"{timeout}s",
+        ]
+        try:
+            proc = subprocess.run(cmd, cwd=tmp_cwd, env=env, text=True,
+                                  capture_output=True, timeout=timeout + 30)
+        except subprocess.TimeoutExpired:
+            return False, None, f"timed out after {timeout}s", True
+    resp = {}
+    for line in reversed((proc.stdout or "").strip().splitlines()):
+        with contextlib.suppress(ValueError):
+            parsed = json.loads(line)
+            if isinstance(parsed, dict):
+                resp = parsed
+                break
+    if proc.returncode != 0 or (resp and resp.get("status") and resp.get("status") != "SUCCESS"):
+        detail = (resp.get("error") if isinstance(resp.get("error"), str) else None) or proc.stderr or proc.stdout or ""
+        return False, None, f"(exit {proc.returncode}): {detail.strip()[:1000]}", False
+    review_text = resp.get("response") if resp else proc.stdout
+    review_text = review_text.strip() if isinstance(review_text, str) else ""
+    if not review_text:
+        return False, None, "agy review returned empty output.", False
+    return True, review_text, None, False
+
+
 def cmd_review(a):
     m = load(a.run_id)
     patch_file = os.path.join(RUNS, a.run_id, "diff.patch")
@@ -1072,9 +1208,27 @@ def cmd_review(a):
     with open(patch_file, "r", encoding="utf-8", errors="replace") as f:
         patch_text = f.read()
 
+    api_prov, api_explicit_model = _infer_api_target(a.model)
     requested_model = resolve_agy_model(a.model) if a.model else None
-    executor = a.executor or ("agy" if (requested_model and requested_model.startswith(("gemini-", "claude-", "gpt-oss-"))) else "codex")
-    model = requested_model or ("gemini-pro-orchestrator" if executor == "agy" else "gpt-6-astra")
+    if a.executor:
+        executor = a.executor
+    elif not a.model:
+        executor = "codex"
+    elif api_prov:
+        executor = "api"
+    elif requested_model.startswith(("gemini-", "claude-", "gpt-oss-")):
+        executor = "agy"
+    else:
+        executor = "codex"
+
+    if executor == "agy":
+        model = requested_model or "gemini-pro-orchestrator"
+    elif executor == "codex":
+        model = requested_model or "gpt-6-astra"
+    elif executor == "api":
+        model = api_explicit_model or api_prov or a.model or "api"
+    else:
+        model = a.model if api_prov else (requested_model or "gemini-pro-orchestrator")
 
     if not patch_text.strip():
         out = {"run": a.run_id, "executor": executor, "model": model, "status": "empty_patch",
@@ -1101,37 +1255,64 @@ def cmd_review(a):
         "3. Recommended verification checks before apply\n"
     )
 
+    fallbacks = []
+    win_provider = None
+    final_executor = executor
+    final_model = model
+
     if executor == "agy":
         agy_bin = find_agy_bin()
         if not agy_bin:
             sys.exit("REFUSED: `agy` command line tool is not found on PATH or ~/.local/bin/agy.")
-        cmd_prefix, env = agy_cmd_prefix_and_env(agy_bin)
-        with tempfile.TemporaryDirectory(prefix="auto-review-") as tmp_cwd:
-            cmd = [
-                *cmd_prefix, "-p", review_prompt,
-                "--model", model,
-                "--mode", "plan",
-                "--disable-slash-commands",
-                "--output-format", "json",
-                "--print-timeout", f"{a.timeout}s",
-            ]
-            proc = subprocess.run(cmd, cwd=tmp_cwd, env=env, text=True,
-                                  capture_output=True, timeout=a.timeout + 30)
-        resp = {}
-        for line in reversed((proc.stdout or "").strip().splitlines()):
-            with contextlib.suppress(ValueError):
-                parsed = json.loads(line)
-                if isinstance(parsed, dict):
-                    resp = parsed
-                    break
-        if proc.returncode != 0 or (resp and resp.get("status") and resp.get("status") != "SUCCESS"):
-            detail = (resp.get("error") if isinstance(resp.get("error"), str) else None) or proc.stderr or proc.stdout or ""
-            sys.exit(f"REFUSED: agy review failed (exit {proc.returncode}): {detail.strip()[:1000]}")
-        review_text = (resp.get("response") if resp else proc.stdout)
-        review_text = review_text.strip() if isinstance(review_text, str) else ""
-        if not review_text:
-            sys.exit("REFUSED: agy review returned empty output.")
+        ok, review_text, err, timed_out = _run_agy_review_once(model, review_prompt, a.timeout, agy_bin=agy_bin)
+        if not ok:
+            if timed_out:
+                sys.exit(f"REFUSED: agy review timed out after {a.timeout}s.")
+            if err == "agy review returned empty output.":
+                sys.exit("REFUSED: agy review returned empty output.")
+            sys.exit(f"REFUSED: agy review failed {err}")
         review_filename, meta_key, banner = "agy_review.json", "agy_review", "AGY"
+    elif executor == "api":
+        win_provider, final_model, review_text, api_fallbacks = _run_api_review(review_prompt, a.model)
+        fallbacks.extend(api_fallbacks)
+        review_filename, meta_key, banner = "api_review.json", "api_review", "API"
+    elif executor == "auto":
+        if api_prov:
+            win_provider, final_model, review_text, api_fallbacks = _run_api_review(review_prompt, a.model)
+            fallbacks.extend(api_fallbacks)
+            final_executor = "api"
+            review_filename, meta_key, banner = "api_review.json", "api_review", "API"
+        else:
+            agy_bin = find_agy_bin()
+            start_model = requested_model or "gemini-pro-orchestrator"
+            review_text = None
+            if not agy_bin:
+                fallbacks.append({
+                    "executor": "agy",
+                    "model": start_model,
+                    "error": "`agy` command line tool is not found on PATH or ~/.local/bin/agy.",
+                })
+            else:
+                if start_model.startswith(("claude-", "gpt-oss-")):
+                    raw_cands = [start_model, "gemini-pro-orchestrator", "gpt-oss-120b-medium"]
+                else:
+                    raw_cands = [start_model, "claude-opus-5-5-high", "gpt-oss-120b-medium"]
+                for cand in dict.fromkeys(raw_cands):
+                    ok, text, err, _ = _run_agy_review_once(cand, review_prompt, a.timeout, agy_bin=agy_bin)
+                    if ok:
+                        review_text = text
+                        final_executor = "agy"
+                        final_model = cand
+                        review_filename, meta_key, banner = "agy_review.json", "agy_review", "AGY"
+                        break
+                    fallbacks.append({"executor": "agy", "model": cand, "error": err})
+            if review_text is None:
+                win_provider, final_model, review_text, api_fallbacks = _run_api_review(
+                    review_prompt, None, prior_fallbacks=fallbacks
+                )
+                fallbacks.extend(api_fallbacks)
+                final_executor = "api"
+                review_filename, meta_key, banner = "api_review.json", "api_review", "API"
     else:
         codex_bin = shutil.which("codex")
         if not codex_bin:
@@ -1146,7 +1327,10 @@ def cmd_review(a):
                 "-m", model,
                 "-"
             ]
-            proc = subprocess.run(cmd, input=review_prompt, text=True, capture_output=True, timeout=a.timeout)
+            try:
+                proc = subprocess.run(cmd, input=review_prompt, text=True, capture_output=True, timeout=a.timeout)
+            except subprocess.TimeoutExpired:
+                sys.exit(f"REFUSED: codex review timed out after {a.timeout}s.")
             if proc.returncode != 0:
                 sys.exit(f"REFUSED: codex review failed (exit {proc.returncode}): {proc.stderr.strip()[:1000]}")
             with open(out_path, "r", encoding="utf-8", errors="replace") as f:
@@ -1159,12 +1343,17 @@ def cmd_review(a):
 
     review_record = {
         "run": a.run_id,
-        "executor": executor,
-        "model": model,
+        "executor": final_executor,
+        "model": final_model,
         "reviewed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "patch_sha256": hashlib.sha256(patch_text.encode("utf-8")).hexdigest(),
-        "review": review_text
+        "review": review_text,
     }
+    if win_provider:
+        review_record["provider"] = win_provider
+    if fallbacks:
+        review_record["fallbacks"] = fallbacks
+
     review_path = os.path.join(RUNS, a.run_id, review_filename)
     with open(review_path, "w", encoding="utf-8") as f:
         json.dump(review_record, f, indent=2, ensure_ascii=False)
@@ -1175,7 +1364,8 @@ def cmd_review(a):
     if a.json:
         print(json.dumps(review_record, ensure_ascii=False, indent=2))
     else:
-        print(f"=== {banner} REVIEW FOR {a.run_id} ({model}) ===\n")
+        label = f"{win_provider}/{final_model}" if win_provider else final_model
+        print(f"=== {banner} REVIEW FOR {a.run_id} ({label}) ===\n")
         print(review_text)
         print(f"\nSaved to {review_path}")
 
@@ -1304,7 +1494,7 @@ def main():
     r.add_argument("--repo", required=True)
     r.add_argument("--brief", required=True)
     r.add_argument("--model", required=True, help="explicit agy model ID from the routing profile (`agy models`)")
-    r.add_argument("--platform", choices=["codex", "claude", "gemini", "opencode", "headless"], default="claude",
+    r.add_argument("--platform", choices=["codex", "claude", "gemini", "opencode", "cursor", "headless"], default="claude",
                    help="coordinating platform (executor remains agy)")
     r.add_argument("--coordinator-model", default="current", help="coordinator identity for provenance")
     r.add_argument("--task-id", help="optional task ID from the coordinating platform")
@@ -1347,10 +1537,10 @@ def main():
     r.set_defaults(fn=cmd_apply)
     r = sp.add_parser("review")
     r.add_argument("run_id")
-    r.add_argument("--executor", choices=["agy", "codex"],
-                   help="review CLI backend (agy uses Google AI Ultra subscription)")
+    r.add_argument("--executor", choices=["agy", "api", "auto", "codex"],
+                   help="review backend (auto tries agy cross-pool then api; agy uses Google AI Ultra; api uses moa_runner prepaid providers)")
     r.add_argument("--model", default=None,
-                   help="model for review (defaults to gemini-pro-orchestrator for agy, gpt-6-astra for codex)")
+                   help="model for review (defaults to gemini-pro-orchestrator for agy/auto, deepseek/glm/minimax for api, gpt-6-astra for codex)")
     r.add_argument("--timeout", type=int, default=600)
     r.add_argument("--json", action="store_true", help="output JSON review record")
     r.set_defaults(fn=cmd_review)

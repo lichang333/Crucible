@@ -16,8 +16,8 @@ import tempfile
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Install MoA skills for Codex, Claude, Gemini (agy), and OpenCode.")
-    parser.add_argument("--platform", choices=("codex", "claude", "gemini", "agy", "opencode", "all"), default="all",
+    parser = argparse.ArgumentParser(description="Install MoA skills for Codex, Claude, Gemini (agy), OpenCode, and Cursor.")
+    parser.add_argument("--platform", choices=("codex", "claude", "gemini", "agy", "opencode", "cursor", "all"), default="all",
                         help="which platform to install (default: all)")
     parser.add_argument("--dry-run", action="store_true",
                         help="preview changes without writing files or reading API keys")
@@ -27,19 +27,29 @@ def main():
     destinations = {"codex": user_home / ".agents/skills",
                     "claude": user_home / ".claude/skills",
                     "gemini": user_home / ".gemini/config/skills",
-                    "opencode": user_home / ".config/opencode/skills"}
+                    "opencode": user_home / ".config/opencode/skills",
+                    "cursor": user_home / ".cursor/skills"}
     platform_skills = {"codex": ("moa", "auto"),
                        "claude": ("moa", "auto"),
                        "gemini": ("moa", "auto"),
-                       "opencode": ("moa", "auto", "swarm")}
+                       "opencode": ("moa", "auto", "swarm"),
+                       "cursor": ("moa", "auto", "swarm")}
     selected = "gemini" if args.platform == "agy" else args.platform
     platforms = tuple(destinations) if selected == "all" else (selected,)
     skill_links = [(repo / "platforms" / platform / "skills" / skill,
                     destinations[platform] / skill)
                    for platform in platforms for skill in platform_skills[platform]]
-    agent_links = ([(repo / "platforms/opencode/agents/swarm.md",
-                     user_home / ".config/opencode/agents/swarm.md")]
-                   if "opencode" in platforms else [])
+    agent_links = []
+    if "opencode" in platforms:
+        agent_links.append((repo / "platforms/opencode/agents/swarm.md",
+                            user_home / ".config/opencode/agents/swarm.md"))
+    if "cursor" in platforms:
+        agent_links.extend([
+            (repo / "platforms/cursor/agents/swarm-coordinator.md",
+             user_home / ".cursor/agents/swarm-coordinator.md"),
+            (repo / "platforms/cursor/rules/swarm-coordinator.mdc",
+             user_home / ".cursor/rules/swarm-coordinator.mdc"),
+        ])
 
     # Detach the old Claude -> Codex link before Codex gets its own entry point.
     # Only this recognized legacy chain is migrated when Claude was not selected.

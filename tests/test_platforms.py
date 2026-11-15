@@ -16,7 +16,7 @@ class PlatformPackages(unittest.TestCase):
                      "sandbox.sb", "test_guard.py", "test_worker.py", "test_recovery.py", "claude_cloud.py", "test_cloud.py",
                      "claude_local.py", "claude_broker.py", "test_local.py"),
         }
-        for platform in ("codex", "claude", "gemini", "opencode"):
+        for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
             for skill, scripts in files.items():
                 entry = ROOT / "platforms" / platform / "skills" / skill
                 with self.subTest(platform=platform, skill=skill):
@@ -37,23 +37,24 @@ class PlatformPackages(unittest.TestCase):
                     profile = json.loads((entry / "routing.json").read_text())
                     self.assertTrue((entry / profile["extends"]).is_file())
 
-        swarm_entry = ROOT / "platforms/opencode/skills/swarm"
-        with self.subTest(platform="opencode", skill="swarm"):
-            self.assertTrue((swarm_entry / "SKILL.md").is_file())
-            swarm_expected = {
-                "agy_worker.py": ROOT / "skills/auto/agy_worker.py",
-                "moa_runner.py": ROOT / "skills/moa/moa_runner.py",
-                "routing.json": ROOT / "config/opencode.json",
-                "headless.json": ROOT / "config/headless.json",
-                "auto-workflow.md": ROOT / "shared/auto-workflow.md",
-            }
-            for name, source in swarm_expected.items():
-                self.assertTrue((swarm_entry / name).is_symlink(), name)
-                self.assertTrue((swarm_entry / name).is_file(), name)
-                self.assertEqual((swarm_entry / name).resolve(), source.resolve())
+        for platform in ("opencode", "cursor"):
+            swarm_entry = ROOT / "platforms" / platform / "skills/swarm"
+            with self.subTest(platform=platform, skill="swarm"):
+                self.assertTrue((swarm_entry / "SKILL.md").is_file())
+                swarm_expected = {
+                    "agy_worker.py": ROOT / "skills/auto/agy_worker.py",
+                    "moa_runner.py": ROOT / "skills/moa/moa_runner.py",
+                    "routing.json": ROOT / "config" / f"{platform}.json",
+                    "headless.json": ROOT / "config/headless.json",
+                    "auto-workflow.md": ROOT / "shared/auto-workflow.md",
+                }
+                for name, source in swarm_expected.items():
+                    self.assertTrue((swarm_entry / name).is_symlink(), name)
+                    self.assertTrue((swarm_entry / name).is_file(), name)
+                    self.assertEqual((swarm_entry / name).resolve(), source.resolve())
 
     def test_installed_command_shapes_resolve_without_model_calls(self):
-        for platform in ("codex", "claude", "gemini", "opencode"):
+        for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
             entry = ROOT / "platforms" / platform / "skills"
             with self.subTest(platform=platform):
                 preview = subprocess.run(
@@ -98,6 +99,28 @@ class PlatformPackages(unittest.TestCase):
         self.assertEqual(len(catalog["families"]), 8)
         self.assertEqual(len(catalog["models"]), 19)
         self.assertNotIn("gemini-3.8", out.stdout)
+
+    def test_cursor_agent_and_rule_entrypoints(self):
+        agent_path = ROOT / "platforms/cursor/agents/swarm-coordinator.md"
+        self.assertTrue(agent_path.is_file())
+        agent_text = agent_path.read_text()
+        self.assertTrue(agent_text.startswith("---\n"))
+        agent_fm = agent_text.split("---\n", 2)[1]
+        self.assertIn("name: swarm-coordinator", agent_fm)
+        self.assertIn("description:", agent_fm)
+
+        rule_path = ROOT / "platforms/cursor/rules/swarm-coordinator.mdc"
+        self.assertTrue(rule_path.is_file())
+        rule_text = rule_path.read_text()
+        self.assertTrue(rule_text.startswith("---\n"))
+        rule_fm = rule_text.split("---\n", 2)[1]
+        self.assertIn("description:", rule_fm)
+        self.assertIn("alwaysApply: true", rule_fm)
+
+        for skill in ("moa", "auto", "swarm"):
+            skill_text = (ROOT / "platforms/cursor/skills" / skill / "SKILL.md").read_text()
+            self.assertNotIn("disable-model-invocation: true", skill_text,
+                             f"Cursor {skill} skill should stay auto-invocable")
 
 
 if __name__ == "__main__":

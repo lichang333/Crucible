@@ -7,7 +7,7 @@ description: Split large, multi-file, or complex coding/verification objectives 
 
 You are the **Swarm Coordinator** running in OpenCode v2.3.0. This workflow applies automatically in default `Swarm` mode (no `/swarm` prefix needed) and when triggered as a skill in `Build` mode.
 
-Your primary optimization goal is **high quality at minimal paid API token cost**: keep the OpenCode host (`zhipu/glm-5.2` or current model) lean as planner/integrator, and offload heavy parallel code reading, implementation, test iteration, and adversarial patch review to **Google AI Ultra subscription workers** via [agy_worker.py](agy_worker.py) (configured in [routing](routing.json) and [headless.json](headless.json); rules in [auto-workflow.md](auto-workflow.md)).
+Your primary optimization goal is **high quality at minimal paid API token cost**: keep the OpenCode host (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, `opencode/*-free`, or current model) lean as planner/integrator, and offload heavy parallel code reading, implementation, test iteration, and adversarial patch review to **Google AI Ultra subscription workers** via [agy_worker.py](agy_worker.py) (configured in [routing](routing.json) and [headless.json](headless.json); rules in [auto-workflow.md](auto-workflow.md)).
 
 ## Execution Discipline (Mandatory)
 - **NEVER roleplay workers in prose**: Do not write fake `[Worker 1]` / `[Verifier]` dialogues or simulate outputs. Every parallel stream MUST be a real tool call (`shell` launching `agy_worker.py` / `moa_runner.py`, or OpenCode `subagent`).
@@ -18,14 +18,17 @@ Your primary optimization goal is **high quality at minimal paid API token cost*
 ## Choose the Right Worker Pool & Automatic Model Routing
 
 1. **Coding & Test-Fix Waves -> Parallel `agy_worker.py` (`$0` marginal API tokens)**:
-   - **Avoid spawning multiple `subagent(agent="general")` writers by default**: each `general` subagent inherits the host's paid API model (e.g., `zhipu/glm-5.2`) and re-reads context, multiplying API token spend 3–5×.
+   - **Avoid spawning multiple `subagent(agent="general")` writers by default**: each `general` subagent inherits the host's paid API model (e.g., `zhipu/glm-5.3`) and re-reads context, multiplying API token spend 3–5×.
    - Instead, split the task into **2–4 disjoint slices** (`<owned_files>` must not overlap) and launch concurrent `agy_worker.py run` processes in one turn (or background shell commands / parallel `shell` calls).
    - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.config/opencode/skills/swarm/agy_worker.py" models`):
      - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium` (`gemini-4-argon-low` for quick checks)
      - Standard L1/L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
      - Deep algorithmic / multi-file synthesis: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
      - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
-     - Cross-pool quota/429 failover: automatically switch between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
+     - **3-tier automatic quota / unsubscribed failover**:
+       - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
+       - **Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted)**: automatically downgrade to the OpenCode native host or scoped native subagents (`general` / `explore`) using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, plus `agy_worker.py review --executor auto` / `--executor api`.
+       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`deepseek` -> `glm` -> `minimax`); in the OpenCode TUI, switching to another provider or `opencode/glm-5.3-flash-free` continues seamlessly.
 
    | Family | Tier | Canonical Model IDs (19 total; `gemini-3.8` retired) |
    |---|---|---|
@@ -48,7 +51,7 @@ Your primary optimization goal is **high quality at minimal paid API token cost*
 
 3. **Cold-Eyes Adversarial Verification Wave (`$0` marginal API tokens)**:
    - Never trust worker self-reports. Once all slice workers finish, automatically pick a **cross-family reviewer** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` when a Gemini 4 model wrote the patch; `gemini-pro-orchestrator` when Claude wrote the patch):
-     - **Automated diff review**: run `python3 "$W" review '<run-id>' --executor agy --model '<cross-family-reviewer>' --json` so a fresh read-only `--mode plan` session inspects the brief + `diff.patch`.
+     - **Automated diff review**: run `python3 "$W" review '<run-id>' --executor auto --model '<cross-family-reviewer>' --json` so a fresh read-only `--mode plan` session inspects the brief + `diff.patch` (automatically fails over across `agy` pools and falls back to `--executor api` if `agy` is unavailable or exhausted; pass `--executor agy` to pin subscription-only or `--executor api` for direct prepaid API failover).
      - **Sandboxed full test suite**: run `python3 "$W" verify '<run-id>' --full -- <project-test-command>`.
      - Optional host read-through: inspect `diff.patch` directly via `read` for flags (`protected_paths` including `.opencode`, `sensitive_paths`, `execution_surface`).
    - **Targeted Fix Loop (max 2 rounds)**: if review or verification finds defects, write a concise feedback file citing exact defect, file/line, and expected behavior, then run `python3 "$W" resume '<run-id>' --brief '<feedback.md>'`, and re-verify `--full`.

@@ -122,18 +122,21 @@ def main():
     # Exercise actual sandbox writes, including existing mixed-case nested config files.
     codex_paths = (".codex/config.toml", "sub/.CoDeX/config.toml")
     opencode_paths = (".opencode/opencode.jsonc", "sub/.OpenCode/skill.md")
-    for rel in codex_paths + opencode_paths:
+    cursor_paths = (".cursor/rules/swarm.mdc", "sub/.Cursor/mcp.json")
+    for rel in codex_paths + opencode_paths + cursor_paths:
         path = os.path.join(wt, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "w").write("original\n")
     r = sh(SB, wt, "/bin/sh", "-c",
            "echo changed > .codex/config.toml; echo changed > sub/.CoDeX/config.toml; mkdir -p other/.CODEX; echo new > other/.CODEX/config.toml; "
-           "echo changed > .opencode/opencode.jsonc; echo changed > sub/.OpenCode/skill.md; mkdir -p other/.OPENCODE; echo new > other/.OPENCODE/opencode.jsonc",
+           "echo changed > .opencode/opencode.jsonc; echo changed > sub/.OpenCode/skill.md; mkdir -p other/.OPENCODE; echo new > other/.OPENCODE/opencode.jsonc; "
+           "echo changed > .cursor/rules/swarm.mdc; echo changed > sub/.Cursor/mcp.json; mkdir -p other/.CURSOR; echo new > other/.CURSOR/rules.mdc",
            cwd=wt, env=dict(os.environ, AUTO_WORKER_GITDIR=wt + "/.git"), check=False)
-    check("sandbox: root and nested mixed-case .codex/.opencode writes blocked",
-          all(open(os.path.join(wt, rel)).read() == "original\n" for rel in codex_paths + opencode_paths)
+    check("sandbox: root and nested mixed-case .codex/.opencode/.cursor writes blocked",
+          all(open(os.path.join(wt, rel)).read() == "original\n" for rel in codex_paths + opencode_paths + cursor_paths)
           and not os.path.exists(os.path.join(wt, "other/.CODEX/config.toml"))
-          and not os.path.exists(os.path.join(wt, "other/.OPENCODE/opencode.jsonc")), r.stderr[-300:])
+          and not os.path.exists(os.path.join(wt, "other/.OPENCODE/opencode.jsonc"))
+          and not os.path.exists(os.path.join(wt, "other/.CURSOR/rules.mdc")), r.stderr[-300:])
     # 7. worker repo is standalone: no stash/branches/remotes from the user's repo
     r = sh("git", "-C", wt, "log", "--all", "--oneline")
     check("worker repo holds only the base commit", len(r.stdout.strip().splitlines()) == 1, r.stdout)
@@ -391,9 +394,11 @@ worker.main()
     r = sh(*W, "run", "--repo", vendored, "--brief", os.path.join(TMP, "brief.md"), "--model", "fake", "--name", "vendored",
            "--node-modules", deps, check=False, env=dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"]))
     leaked = [x for x in os.listdir(os.path.dirname(vtree)) if "-vendored-" in x]
-    # Test codex review command with a mock codex in PATH
+    # Test legacy review <run-id> with no --executor/--model still selects codex / gpt-6-astra
+    codex_args = os.path.join(TMP, "codex_args.txt")
     with open(os.path.join(FAKE, "codex"), "w") as f:
         f.write("#!/bin/sh\n"
+                f"printf '%s\\n' \"$@\" > {shlex.quote(codex_args)}\n"
                 "out=''\n"
                 "while [ $# -gt 0 ]; do\n"
                 "  if [ \"$1\" = \"-o\" ]; then out=\"$2\"; shift 2; else shift; fi\n"
@@ -403,9 +408,14 @@ worker.main()
     os.chmod(os.path.join(FAKE, "codex"), 0o755)
 
     r = sh(*W, "review", rid, "--json", check=False, env=dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"]))
-    check("review subcommand invokes codex and saves review record",
+    codex_review_path = os.path.join(DIR, "runs", rid, "codex_review.json")
+    codex_saved = json.load(open(codex_review_path)) if os.path.isfile(codex_review_path) else {}
+    codex_argv = open(codex_args).read().splitlines() if os.path.isfile(codex_args) else []
+    check("review subcommand invokes codex (gpt-6-astra) and saves review record",
           r.returncode == 0 and "Review Verdict: Acceptable" in r.stdout
-          and os.path.isfile(os.path.join(DIR, "runs", rid, "codex_review.json")), r.stderr + r.stdout)
+          and codex_saved.get("executor") == "codex"
+          and codex_saved.get("model") == "gpt-6-astra"
+          and "-m" in codex_argv and "gpt-6-astra" in codex_argv, r.stderr + r.stdout)
 
     # Test opencode protected paths and agy review command with a mock agy in PATH
     oc = run("opencode-protected",
@@ -418,6 +428,17 @@ worker.main()
     r = sh(*W, "apply", oc["run"], "--sha", oc["patch_sha256"], check=False)
     check("apply refuses protected .opencode even after full verify",
           r.returncode != 0 and "protected paths" in r.stderr and not os.path.exists(os.path.join(REPO, ".opencode")), r.stderr)
+
+    cu = run("cursor-protected",
+             "mkdir -p .cursor/rules sub/.Cursor; echo x > .cursor/rules/swarm.mdc; echo '{}' > sub/.Cursor/mcp.json",
+             "--platform", "cursor", "--coordinator-model", "auto", "--task-id", "cursor-task")
+    check("patch capture flags root and nested mixed-case .cursor and records cursor platform",
+          set(cu.get("REVIEW_FLAGS", {}).get("protected_paths", [])) == set(cursor_paths)
+          and cu.get("platform") == "cursor" and cu.get("coordinator_model") == "auto")
+    sh(*W, "verify", cu["run"], "--full", "--", "/usr/bin/true")
+    r = sh(*W, "apply", cu["run"], "--sha", cu["patch_sha256"], check=False)
+    check("apply refuses protected .cursor even after full verify",
+          r.returncode != 0 and "protected paths" in r.stderr and not os.path.exists(os.path.join(REPO, ".cursor")), r.stderr)
 
     fake_agy("true", response={"status": "SUCCESS", "response": "Review Verdict: Acceptable (agy)"})
     r = sh(*W, "review", rid, "--executor", "agy", "--json", check=False, env=dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"]))
@@ -545,6 +566,227 @@ worker.main()
           and alias_meta.get("model") == "gemini-4-hydrogen-xhigh"
           and "--model" in run_argv and "gemini-4-hydrogen-xhigh" in run_argv,
           r.stderr + r.stdout)
+
+    # 15. Review executor api, auto cross-pool/API failover, TimeoutExpired, and symlinked _load_moa_runner.
+    infer_cases = {
+        "grok": ("grok", None),
+        "xai": ("grok", None),
+        "xai/grok-4.7": ("grok", "grok-4.7"),
+        "grok-4.7": ("grok", "grok-4.7"),
+        "deepseek": ("deepseek", None),
+        "GLM": ("glm", None),
+        "zhipu/glm-5.3": ("glm", "glm-5.3"),
+        "deepseek/deepseek-v4-pro": ("deepseek", "deepseek-v4-pro"),
+        "GLM-5.3-Flash": ("glm", "GLM-5.3-Flash"),
+        "minimax/MiniMax-M3": ("minimax", "MiniMax-M3"),
+        "MiniMax-M3": ("minimax", "MiniMax-M3"),
+        "Claude Opus 5.5": (None, None),
+        "gpt-6-astra": (None, None),
+        "": (None, None),
+    }
+    bad_infer = {k: (v, worker_mod._infer_api_target(k))
+                 for k, v in infer_cases.items() if worker_mod._infer_api_target(k) != v}
+    check("_infer_api_target normalizes providers, zhipu->glm, and model prefixes",
+          not bad_infer, json.dumps(bad_infer))
+
+    swarm_entry = os.path.join(SOURCE_DIR, "..", "..", "platforms", "opencode", "skills", "swarm", "agy_worker.py")
+    sym_spec = importlib.util.spec_from_file_location("agy_worker_sym", swarm_entry)
+    sym_mod = importlib.util.module_from_spec(sym_spec)
+    sym_spec.loader.exec_module(sym_mod)
+    loaded_runner = sym_mod._load_moa_runner()
+    check("_load_moa_runner resolves skills/moa/moa_runner.py through symlinked entrypoint",
+          all(hasattr(loaded_runner, attr) for attr in ("load_env", "load_config", "provider_key", "run_worker", "REVIEW_RULES")))
+
+    # Install an offline mock moa_runner.py under TMP/moa/ so CLI subprocesses never hit the network or real .env.
+    mock_moa_dir = os.path.join(TMP, "moa")
+    os.makedirs(mock_moa_dir, exist_ok=True)
+    with open(os.path.join(mock_moa_dir, "moa_runner.py"), "w", encoding="utf-8") as f:
+        f.write(
+            "import json, os\n"
+            "REVIEW_RULES = 'mock review rules'\n"
+            "def load_env(): pass\n"
+            "def load_config(platform):\n"
+            "    return {'providers': {\n"
+            "        'grok': {'model': 'grok-4.7', 'display_name': 'Grok-4.7'},\n"
+            "        'deepseek': {'model': 'deepseek-chat', 'display_name': 'DeepSeek-V4-Pro'},\n"
+            "        'glm': {'model': 'glm-5.3-flash', 'display_name': 'GLM-5.3-Flash'},\n"
+            "        'minimax': {'model': 'MiniMax-M3', 'display_name': 'MiniMax-M3'},\n"
+            "    }}\n"
+            "def provider_key(prov):\n"
+            "    return os.environ.get(f'MOCK_{prov.upper()}_KEY')\n"
+            "def run_worker(prov, settings, prompt, api_key, system_prompt=None, max_tokens=None, attempts=2):\n"
+            "    beh = json.loads(os.environ.get('MOCK_API_BEHAVIOR', '{}'))\n"
+            "    item = beh.get(prov, {'status': 'failed', 'error': 'unconfigured mock'})\n"
+            "    return {'provider': prov, 'model': settings['model'], **item}\n"
+        )
+
+    api_review_path = os.path.join(DIR, "runs", rid, "api_review.json")
+    expected_patch_sha = json.load(open(os.path.join(DIR, "runs", rid, "meta.json")))["rounds"][-1]["sha256"]
+
+    base_api_env = dict(os.environ, HOME=TMP, PATH=FAKE + ":" + os.environ["PATH"])
+    for k in list(base_api_env):
+        if k.startswith("MOCK_"):
+            base_api_env.pop(k, None)
+
+    r_nokey = sh(*W, "review", rid, "--executor", "api", "--json", check=False, env=base_api_env)
+    check("review --executor api refuses cleanly when no API keys are configured",
+          r_nokey.returncode != 0 and "REFUSED: api review requires at least one configured key" in r_nokey.stderr,
+          r_nokey.stderr)
+
+    env_api_ok = dict(base_api_env,
+                      MOCK_DEEPSEEK_KEY="k-ds",
+                      MOCK_GLM_KEY="k-glm",
+                      MOCK_API_BEHAVIOR=json.dumps({
+                          "deepseek": {"status": "success", "response": "Review Verdict: Acceptable (api-deepseek)"}
+                      }))
+    r_api_ok = sh(*W, "review", rid, "--executor", "api", "--json", check=False, env=env_api_ok)
+    api_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    check("review --executor api --json succeeds offline and saves api_review.json",
+          r_api_ok.returncode == 0
+          and api_saved.get("executor") == "api"
+          and api_saved.get("provider") == "deepseek"
+          and api_saved.get("model") == "deepseek-chat"
+          and api_saved.get("patch_sha256") == expected_patch_sha
+          and "Acceptable (api-deepseek)" in api_saved.get("review", ""),
+          r_api_ok.stderr + r_api_ok.stdout)
+
+    env_api_failover = dict(base_api_env,
+                            MOCK_DEEPSEEK_KEY="k-ds",
+                            MOCK_GLM_KEY="k-glm",
+                            MOCK_API_BEHAVIOR=json.dumps({
+                                "deepseek": {"status": "failed", "error": "HTTP 402 insufficient balance"},
+                                "glm": {"status": "success", "response": "Review Verdict: Acceptable (api-glm)"},
+                            }))
+    r_api_fo = sh(*W, "review", rid, "--executor", "api", "--json", check=False, env=env_api_failover)
+    api_fo_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    check("review --executor api fails over from deepseek to glm and records fallbacks",
+          r_api_fo.returncode == 0
+          and api_fo_saved.get("provider") == "glm"
+          and api_fo_saved.get("model") == "glm-5.3-flash"
+          and len(api_fo_saved.get("fallbacks", [])) == 1
+          and api_fo_saved["fallbacks"][0].get("provider") == "deepseek"
+          and "402" in api_fo_saved["fallbacks"][0].get("error", ""),
+          r_api_fo.stderr + r_api_fo.stdout)
+
+    if os.path.exists(api_review_path):
+        os.unlink(api_review_path)
+    env_grok_ok = dict(base_api_env,
+                       MOCK_GROK_KEY="opencode-oauth",
+                       MOCK_API_BEHAVIOR=json.dumps({
+                           "grok": {"status": "success", "response": "Review Verdict: Acceptable (grok-4.7)"}
+                       }))
+    r_grok_ok = sh(*W, "review", rid, "--model", "grok", "--json", check=False, env=env_grok_ok)
+    grok_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    check("review --model grok routes to api executor and Grok-4.7 without network",
+          r_grok_ok.returncode == 0
+          and grok_saved.get("executor") == "api"
+          and grok_saved.get("provider") == "grok"
+          and grok_saved.get("model") == "grok-4.7"
+          and "Acceptable (grok-4.7)" in grok_saved.get("review", ""),
+          r_grok_ok.stderr + r_grok_ok.stdout)
+
+    auto_agy_calls = os.path.join(TMP, "auto_agy_calls.txt")
+    with open(os.path.join(FAKE, "agy"), "w") as f:
+        f.write(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "args = sys.argv[1:]\n"
+            "with open(" + repr(auto_agy_calls) + ", 'a') as log:\n"
+            "    log.write(json.dumps(args) + '\\n')\n"
+            "m = args[args.index('--model') + 1] if '--model' in args else ''\n"
+            "if m == 'gemini-pro-orchestrator':\n"
+            "    print(json.dumps({'status': 'ERROR', 'error': 'Individual quota reached'}))\n"
+            "    sys.exit(1)\n"
+            "print(json.dumps({'status': 'SUCCESS', 'response': f'Review Verdict: Acceptable ({m})'}))\n"
+        )
+    os.chmod(os.path.join(FAKE, "agy"), 0o755)
+    r_auto_agy = sh(*W, "review", rid, "--executor", "auto", "--json", check=False, env=base_api_env)
+    auto_agy_saved = json.load(open(agy_review_path)) if os.path.isfile(agy_review_path) else {}
+    auto_calls_raw = open(auto_agy_calls).read() if os.path.isfile(auto_agy_calls) else ""
+    check("review --executor auto fails over across agy pools without --dangerously-skip-permissions",
+          r_auto_agy.returncode == 0
+          and auto_agy_saved.get("executor") == "agy"
+          and auto_agy_saved.get("model") == "claude-opus-5-5-high"
+          and len(auto_agy_saved.get("fallbacks", [])) == 1
+          and auto_agy_saved["fallbacks"][0].get("model") == "gemini-pro-orchestrator"
+          and "--dangerously-skip-permissions" not in auto_calls_raw,
+          r_auto_agy.stderr + r_auto_agy.stdout)
+
+    if os.path.exists(api_review_path):
+        os.unlink(api_review_path)
+    with open(os.path.join(FAKE, "agy"), "w") as f:
+        f.write(
+            "#!/usr/bin/env python3\n"
+            "import json, sys\n"
+            "print(json.dumps({'status': 'ERROR', 'error': 'Individual quota reached'}))\n"
+            "sys.exit(1)\n"
+        )
+    os.chmod(os.path.join(FAKE, "agy"), 0o755)
+    env_auto_to_api = dict(base_api_env,
+                           MOCK_GLM_KEY="k-glm",
+                           MOCK_API_BEHAVIOR=json.dumps({
+                               "glm": {"status": "success", "response": "Review Verdict: Acceptable (auto->api)"}
+                           }))
+    r_auto_api = sh(*W, "review", rid, "--executor", "auto", "--json", check=False, env=env_auto_to_api)
+    auto_api_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    check("review --executor auto falls back to api when all agy pools are exhausted",
+          r_auto_api.returncode == 0
+          and auto_api_saved.get("executor") == "api"
+          and auto_api_saved.get("provider") == "glm"
+          and [fb.get("model") for fb in auto_api_saved.get("fallbacks", [])] == [
+              "gemini-pro-orchestrator", "claude-opus-5-5-high", "gpt-oss-120b-medium"
+          ],
+          r_auto_api.stderr + r_auto_api.stdout)
+
+    if os.path.exists(api_review_path):
+        os.unlink(api_review_path)
+    clean_bin = os.path.join(TMP, "clean_bin")
+    os.makedirs(clean_bin, exist_ok=True)
+    py_link = os.path.join(clean_bin, "python3")
+    if not os.path.exists(py_link):
+        os.symlink(sys.executable, py_link)
+    no_agy_dirs = [clean_bin] + [
+        p for p in ("/usr/bin", "/bin")
+        if os.path.isdir(p) and not os.path.exists(os.path.join(p, "agy"))
+    ]
+    no_agy_path = os.pathsep.join(no_agy_dirs)
+    env_missing_agy = dict(env_auto_to_api, HOME=TMP, PATH=no_agy_path)
+    r_auto_noagy = sh(*W, "review", rid, "--executor", "auto", "--timeout", "5", "--json",
+                      check=False, env=env_missing_agy)
+    auto_noagy_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    check("review --executor auto falls back to api when agy binary is missing",
+          shutil.which("agy", path=no_agy_path) is None
+          and r_auto_noagy.returncode == 0
+          and auto_noagy_saved.get("executor") == "api"
+          and auto_noagy_saved.get("provider") == "glm"
+          and len(auto_noagy_saved.get("fallbacks", [])) == 1
+          and auto_noagy_saved["fallbacks"][0].get("executor") == "agy"
+          and "not found" in auto_noagy_saved["fallbacks"][0].get("error", ""),
+          r_auto_noagy.stderr + r_auto_noagy.stdout)
+
+    timeout_probe = (
+        "import importlib.util, json, subprocess, sys\n"
+        "spec = importlib.util.spec_from_file_location('worker', sys.argv[1])\n"
+        "worker = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(worker)\n"
+        "seen = []\n"
+        "def fake_run(cmd, **kw):\n"
+        "    seen.append(cmd)\n"
+        "    raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)\n"
+        "worker.subprocess.run = fake_run\n"
+        "sys.argv = [sys.argv[1], 'review', sys.argv[2], '--executor', 'agy', '--timeout', '5']\n"
+        "try:\n"
+        "    worker.main()\n"
+        "except SystemExit as e:\n"
+        "    print(json.dumps({'code': e.code, 'cmds': seen}), file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+    )
+    r_timeout = sh(sys.executable, "-c", timeout_probe, W[1], rid, check=False, env=base_api_env)
+    check("review --executor agy handles TimeoutExpired with REFUSED and omits --dangerously-skip-permissions",
+          r_timeout.returncode != 0
+          and "REFUSED: agy review timed out after 5s." in r_timeout.stderr
+          and "--dangerously-skip-permissions" not in r_timeout.stderr,
+          r_timeout.stderr + r_timeout.stdout)
 
     for rid in CREATED:
         sh(*W, "clean", rid, check=False)

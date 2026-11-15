@@ -29,7 +29,7 @@ Use `--platform headless` only when API aggregation is wanted; this adds a paid
 aggregator call. A bare invocation of the shared core script retains legacy
 headless behavior.
 
-`--models` accepts comma-separated provider names (default active set: `agy`, `glm`, `deepseek`, `minimax`; `opencode` defaults to `agy`, `deepseek`, `minimax`). Prefer a relevant subset when
+`--models` accepts comma-separated provider names (default active set: `agy`, `grok`, `glm`, `deepseek`, `minimax`; `opencode` defaults to `agy`, `deepseek`, `minimax`). Prefer a relevant subset when
 it suffices; the legacy default remains all configured providers. Keys are local
 to the shared `skills/moa/.env` or the existing environment/Desktop fallback.
 The `agy` provider executes locally in read-only `--mode plan` via `agy` (default model `gemini-pro-orchestrator`, `Orchestrator (Carbon)`) using the user's Google AI Ultra subscription without requiring an API key.
@@ -97,3 +97,17 @@ Use `--cross-review` (with `--cycles 1` or `--cycles 2`) to execute the four-sta
 collaboration protocol described in [evidence-review-proposal.md](evidence-review-proposal.md):
 independent structured candidates → peer-assigned cross-reviews → author revisions → authoritative synthesis.
 Raw JSON markers `===MOA_CROSS_REVIEW_START===` and `===MOA_CROSS_REVIEW_END===` bracket the final synthesis.
+Stages 1 (Independent Answers), 2 (Cross-Reviews), and 3 (Revisions) execute their model calls concurrently
+via worker thread pools while preserving deterministic candidate ordering, per-stage repair budgets, and early
+convergence when all reviewers find no substantive issues.
+
+## Provider health and latency check (`--doctor`)
+
+To probe connectivity, authentication, and response latency across configured API, OAuth CLI, and Local CLI providers without running a full query, use `--doctor` (or `--status`):
+
+```bash
+python3 "$R" --doctor
+python3 "$R" --models grok,deepseek,glm --doctor
+```
+
+This pings targets concurrently (`max_tokens=128` so reasoning models do not truncate) and displays a summary table reporting type (`API`, `OAuth CLI`, or `Local CLI`), status (`✅ OK`, `⚠️ No Auth`, or `❌ Error`), round-trip latency, and diagnostic details without writing run records.

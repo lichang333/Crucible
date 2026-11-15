@@ -30,13 +30,17 @@ class InstallTests(unittest.TestCase):
                  "timeout": 15}]}]}}))
         self.write("skills/moa/.env.example", "EXAMPLE_API_KEY=\n")
         self.write("skills/auto/agy_guard.py", "#!/usr/bin/env python3\n")
-        for platform in ("codex", "claude", "gemini", "opencode"):
-            skills = ("moa", "auto", "swarm") if platform == "opencode" else ("moa", "auto")
+        for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
+            skills = ("moa", "auto", "swarm") if platform in ("opencode", "cursor") else ("moa", "auto")
             for skill in skills:
                 self.write(f"platforms/{platform}/skills/{skill}/SKILL.md",
                            f"{platform}: {skill}\n")
         self.write("platforms/opencode/agents/swarm.md",
                    "---\ndescription: swarm\nmode: primary\n---\nswarm\n")
+        self.write("platforms/cursor/agents/swarm-coordinator.md",
+                   "---\nname: swarm-coordinator\ndescription: swarm\n---\nswarm\n")
+        self.write("platforms/cursor/rules/swarm-coordinator.mdc",
+                   "---\ndescription: swarm\nalwaysApply: true\n---\nswarm\n")
 
     def write(self, relative, content, home=False):
         path = (self.user_home if home else self.repo) / relative
@@ -74,6 +78,7 @@ class InstallTests(unittest.TestCase):
         directory = (".agents" if platform == "codex"
                      else ".claude" if platform == "claude"
                      else ".config/opencode" if platform == "opencode"
+                     else ".cursor" if platform == "cursor"
                      else ".gemini/config")
         self.link(f"{directory}/skills/moa", shared)
         return shared
@@ -82,8 +87,9 @@ class InstallTests(unittest.TestCase):
         directory = (".agents" if platform == "codex"
                      else ".claude" if platform == "claude"
                      else ".config/opencode" if platform == "opencode"
+                     else ".cursor" if platform == "cursor"
                      else ".gemini/config")
-        skills = ("moa", "auto", "swarm") if platform == "opencode" else ("moa", "auto")
+        skills = ("moa", "auto", "swarm") if platform in ("opencode", "cursor") else ("moa", "auto")
         for skill in skills:
             path = self.user_home / directory / "skills" / skill
             self.assertTrue(path.is_symlink())
@@ -94,6 +100,15 @@ class InstallTests(unittest.TestCase):
             self.assertTrue(agent_path.is_symlink())
             self.assertEqual(os.readlink(agent_path),
                              str(self.repo / "platforms/opencode/agents/swarm.md"))
+        if platform == "cursor":
+            agent_path = self.user_home / ".cursor/agents/swarm-coordinator.md"
+            self.assertTrue(agent_path.is_symlink())
+            self.assertEqual(os.readlink(agent_path),
+                             str(self.repo / "platforms/cursor/agents/swarm-coordinator.md"))
+            rule_path = self.user_home / ".cursor/rules/swarm-coordinator.mdc"
+            self.assertTrue(rule_path.is_symlink())
+            self.assertEqual(os.readlink(rule_path),
+                             str(self.repo / "platforms/cursor/rules/swarm-coordinator.mdc"))
 
     def hooks(self):
         return json.loads((self.user_home / ".gemini/config/hooks.json").read_text())
@@ -119,6 +134,7 @@ class InstallTests(unittest.TestCase):
         self.assert_installed("claude")
         self.assert_installed("gemini")
         self.assert_installed("opencode")
+        self.assert_installed("cursor")
         hook = self.hooks()[HOOK_KEY]["PreToolUse"][0]["hooks"][0]
         self.assertEqual(shlex.split(hook["command"]),
                          [str(self.repo / "skills/auto/agy_guard.py")])
@@ -132,6 +148,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.user_home / ".gemini/config/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/agents").exists())
+        self.assertFalse((self.user_home / ".cursor").exists())
         self.assertIn(HOOK_KEY, self.hooks())
 
     def test_claude_only_does_not_install_others(self):
@@ -141,6 +158,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.user_home / ".gemini/config/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/agents").exists())
+        self.assertFalse((self.user_home / ".cursor").exists())
         self.assertIn(HOOK_KEY, self.hooks())
 
     def test_gemini_only_does_not_install_others(self):
@@ -150,6 +168,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.user_home / ".claude").exists())
         self.assertFalse((self.user_home / ".config/opencode/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/agents").exists())
+        self.assertFalse((self.user_home / ".cursor").exists())
         self.assertIn(HOOK_KEY, self.hooks())
 
     def test_agy_alias_installs_gemini(self):
@@ -159,6 +178,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.user_home / ".claude").exists())
         self.assertFalse((self.user_home / ".config/opencode/skills").exists())
         self.assertFalse((self.user_home / ".config/opencode/agents").exists())
+        self.assertFalse((self.user_home / ".cursor").exists())
         self.assertIn(HOOK_KEY, self.hooks())
 
     def test_opencode_only_installs_moa_auto_and_swarm(self):
@@ -167,6 +187,16 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.user_home / ".agents").exists())
         self.assertFalse((self.user_home / ".claude").exists())
         self.assertFalse((self.user_home / ".gemini/config/skills").exists())
+        self.assertFalse((self.user_home / ".cursor").exists())
+        self.assertIn(HOOK_KEY, self.hooks())
+
+    def test_cursor_only_installs_moa_auto_swarm_agent_and_rule(self):
+        self.invoke("--platform", "cursor")
+        self.assert_installed("cursor")
+        self.assertFalse((self.user_home / ".agents").exists())
+        self.assertFalse((self.user_home / ".claude").exists())
+        self.assertFalse((self.user_home / ".gemini/config/skills").exists())
+        self.assertFalse((self.user_home / ".config/opencode").exists())
         self.assertIn(HOOK_KEY, self.hooks())
 
     def test_legacy_shared_install_is_migrated_with_backups(self):
@@ -337,6 +367,24 @@ class InstallTests(unittest.TestCase):
         (self.repo / "platforms/opencode/agents/swarm.md").unlink()
         before = self.snapshot()
         result = self.invoke("--platform", "opencode", success=False)
+        self.assertEqual(before, self.snapshot())
+        self.assertIn("missing agent entry point", result.stderr)
+
+    def test_cursor_agent_and_rule_conflicts_are_backed_up(self):
+        self.write(".cursor/agents/swarm-coordinator.md", "existing cursor agent", home=True)
+        self.write(".cursor/rules/swarm-coordinator.mdc", "existing cursor rule", home=True)
+        self.invoke("--platform", "cursor")
+        self.assert_installed("cursor")
+        saved = {path.name: path for path in self.backups()}
+        self.assertEqual(saved[".cursor_agents_swarm-coordinator.md"].read_text(),
+                         "existing cursor agent")
+        self.assertEqual(saved[".cursor_rules_swarm-coordinator.mdc"].read_text(),
+                         "existing cursor rule")
+
+    def test_missing_cursor_agent_fails_preflight(self):
+        (self.repo / "platforms/cursor/agents/swarm-coordinator.md").unlink()
+        before = self.snapshot()
+        result = self.invoke("--platform", "cursor", success=False)
         self.assertEqual(before, self.snapshot())
         self.assertIn("missing agent entry point", result.stderr)
 

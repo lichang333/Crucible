@@ -1,19 +1,22 @@
 ---
 name: moa
-description: Run multi-model Q&A or analysis when the user invokes /moa or requests Mixture of Agents synthesis in OpenCode. Collects Orchestrator (Carbon) via Google AI Ultra (agy CLI, $0 API cost) plus DeepSeek-Chat and MiniMax-M3, adds the host's web-grounded vote, and synthesizes one verified answer. For delegated coding, use auto or swarm instead.
+description: Run multi-model Q&A or analysis when the user invokes /moa or requests Mixture of Agents synthesis in OpenCode. Collects Orchestrator (Carbon) via Google AI Ultra (agy CLI, $0 API cost) plus DeepSeek-V4-Pro and MiniMax-M3, adds the host's web-grounded vote, and synthesizes one verified answer. For delegated coding, use auto or swarm instead.
 ---
 
 # Mixture of Agents (MoA) in OpenCode
 
-The current OpenCode session (`zhipu/glm-5.2` or active host) is the coordinator and final synthesizer. Read [the shared workflow](workflow.md) for evidence rules and run records. [Routing](routing.json) contains the OpenCode profile and inherits shared defaults from [headless.json](headless.json).
+The current OpenCode session (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, `opencode/*-free`, or active host) is the coordinator and final synthesizer. Read [the shared workflow](workflow.md) for evidence rules and run records. [Routing](routing.json) contains the OpenCode profile and inherits shared defaults from [headless.json](headless.json).
 
 ## Why this lineup saves tokens and cost
-- **Host (OpenCode `glm-5.2`)**: Anchor vote with live codebase tools and web search, plus final synthesis (avoids a paid API aggregator call).
+- **Host (OpenCode `glm-5.3` or active host)**: Anchor vote with live codebase tools and web search, plus final synthesis (avoids a paid API aggregator call).
 - **Default Workers (`agy`, `deepseek`, `minimax`)**:
   - `agy` (`Orchestrator (Carbon)` / `gemini-pro-orchestrator`): runs read-only via local `agy --mode plan` on your **Google AI Ultra subscription (\$0 marginal API cost)**.
-  - `deepseek` (`DeepSeek-Chat`) & `minimax` (`MiniMax-M3`): independent non-GLM model families via prepaid APIs.
+  - `deepseek` (`DeepSeek-V4-Pro`) & `minimax` (`MiniMax-M3`): independent non-GLM model families via prepaid APIs.
   - `glm` worker is intentionally omitted from `worker_defaults` in `routing.json` to avoid a redundant same-family GLM API call.
 - **Zero-API-cost single consult**: pass `--models agy` when you only want a second opinion from `Orchestrator (Carbon)` without spending prepaid API tokens.
+- **3-Tier Automatic Failover**:
+  - **Tier 1 (`agy` dual pools)** & **Tier 2 (`agy` unsubscribed/uninstalled/exhausted)**: `agy_worker.py review --executor auto` fails over across Gemini 4 / Orchestrator and Claude 5.5 / `gpt-oss-120b-medium`, then falls back to `--executor api` (`deepseek` -> `glm` -> `minimax`); coding downgrades to the OpenCode native host or scoped subagents (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`).
+  - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `moa_runner.py` (`--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`deepseek` -> `glm` -> `minimax`); in the OpenCode TUI, switching to another healthy provider or `opencode/glm-5.3-flash-free` continues seamlessly.
 
 ## Operating steps
 1. Verify the user supplied a prompt (if not, ask via `question` or plain reply). Strip workflow-only flags (`--deep`, `--fast`, `--no-deep`) before passing the prompt to the script.

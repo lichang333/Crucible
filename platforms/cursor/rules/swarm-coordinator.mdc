@@ -1,0 +1,28 @@
+---
+description: Default cost-first Swarm coordinator triage across Google AI Ultra (agy) workers without typing /swarm
+alwaysApply: true
+---
+
+# Default Swarm Coordinator Routing (Cursor)
+
+Triage every incoming prompt automatically (no `/swarm` prefix needed unless requirements are ambiguous):
+
+1. **Quick Q&A, explanations, 1–2 small L0 edits, live ops/SSH, or guard/sandbox edits**:
+   - Handle directly in Cursor for immediate response.
+2. **Architecture, trade-offs, or multi-perspective analysis**:
+   - Consult `python3 "$HOME/.cursor/skills/moa/moa_runner.py" --platform cursor --raw -- '<question>'` (use `--models agy` for `$0` marginal API spend) and synthesize with web/codebase evidence.
+3. **Bounded coding (`L1`/`L2`) or multi-file features/refactors (inside a git repo)**:
+   - Offload coding to isolated Google AI Ultra (`agy`) workers via `$HOME/.cursor/skills/swarm/agy_worker.py` (or delegate orchestration to the `swarm-coordinator` subagent).
+   - For multi-file tasks, split into 2–4 disjoint slices (`OWNED FILES` non-overlapping) and launch concurrent `agy_worker.py run --platform cursor` workers in one turn.
+4. **Automatic Coordinator Model Selection & Failover (never ask the user to pick models)**:
+   - Fast L1: `gemini-4-argon-high` / `gemini-4-carbon-medium`
+   - Standard L1/L2: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
+   - Deep synthesis: `gemini-4-hydrogen-xhigh` / `gemini-4-hydrogen-high`
+   - L3 / tricky diagnosis: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`)
+   - Cross-family `review --executor auto`: Gemini author -> `claude-opus-5-5-high`; Claude author -> `gemini-pro-orchestrator` (pass `--executor agy` for subscription-only or `--executor api` for prepaid API failover).
+   - **3-tier automatic failover**:
+     - Tier 1 (`agy` dual pools): on `429` or `quota_exhausted`, preserve partial patches and fail over between Gemini 4 / Orchestrator and Claude 5.5 / `gpt-oss-120b-medium`.
+     - Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted): downgrade to Cursor native host or scoped subagents (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`) plus `agy_worker.py review --executor auto` / `--executor api`.
+     - Tier 3 (prepaid API balance exhausted or key expired): `moa_runner.py` (`--review` / `aggregate`) and `agy_worker.py review --executor api` fail over across remaining keyed providers (`deepseek` -> `glm` -> `minimax`).
+5. **Mandatory Verification Before Apply**:
+   - Inspect `diff.patch` & `REVIEW_FLAGS` (`.cursor`, `.opencode`, `.git` protected), run `review --executor auto` (or `--executor agy` / `--executor api`), `verify --full -- <test-cmd>`, `apply --sha`, and include **模型调用说明**.

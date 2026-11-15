@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import threading
 import unittest
 
 spec = importlib.util.spec_from_file_location("evidence_review", Path(__file__).resolve().with_name("evidence_review.py"))
@@ -284,14 +285,23 @@ class EvidenceReviewUnitTests(unittest.TestCase):
     def test_orchestrator_two_cycles(self):
         def mock_call(provider, prompt, system_prompt):
             if "expert reviewer" in system_prompt:
-                payload = {
-                    "review_id": f"rev-{provider}", "reviewer": provider, "target_participant": "t",
-                    "target_version": 1, "no_substantive_issues": True, "issues": []
-                }
+                # Cycle 1 reviews Version 1 and raises an issue; Cycle 2 reviews Version 2 and converges.
+                if "Version 1" in system_prompt:
+                    payload = {
+                        "review_id": f"rev-{provider}", "reviewer": provider, "target_participant": "t",
+                        "target_version": 1, "no_substantive_issues": False,
+                        "issues": [{"issue_id": "iss-1", "issue_type": "evidence_gap", "critique": "critique", "proposed_check": "check"}]
+                    }
+                else:
+                    payload = {
+                        "review_id": f"rev-{provider}", "reviewer": provider, "target_participant": "t",
+                        "target_version": 2, "no_substantive_issues": True, "issues": []
+                    }
             elif "original author" in system_prompt:
                 payload = {
-                    "revision_id": f"rev-{provider}-v", "participant": provider, "version": 2,
-                    "issue_responses": [], "revised_summary": "revised", "revised_answer": "revised"
+                    "revision_id": f"rev-{provider}-v2", "participant": provider, "version": 2,
+                    "issue_responses": [{"issue_id": "iss-1", "disposition": "accept", "reason": "accepted"}],
+                    "revised_summary": "revised", "revised_answer": "revised"
                 }
             elif "Lead Synthesizer" in system_prompt:
                 payload = {
@@ -319,6 +329,85 @@ class EvidenceReviewUnitTests(unittest.TestCase):
         self.assertEqual(trace["cycles"][0]["assignments"], [("A", "B"), ("B", "C"), ("C", "A")])
         self.assertEqual(trace["cycles"][1]["assignments"], [("A", "C"), ("B", "A"), ("C", "B")])
         self.assertEqual(trace["synthesis"]["stop_reason"], "completed")
+
+    def test_orchestrator_early_stops_when_no_issues(self):
+        def mock_call(provider, prompt, system_prompt):
+            if "expert reviewer" in system_prompt:
+                payload = {
+                    "review_id": f"rev-{provider}", "reviewer": provider, "target_participant": "t",
+                    "target_version": 1, "no_substantive_issues": True, "issues": []
+                }
+            elif "Lead Synthesizer" in system_prompt:
+                payload = {
+                    "synthesis_id": "syn", "usable_answer": "done", "supported_points": [],
+                    "unresolved_disagreements": [], "evidence_gaps": [], "next_checks": [],
+                    "limitations": [], "stop_reason": "completed"
+                }
+            else:
+                payload = {
+                    "answer_id": f"ans-{provider}-v1", "participant": provider, "version": 1,
+                    "summary": "s", "claims": [{"claim_id": "c1", "statement": "st", "claim_type": "fact"}],
+                    "full_answer": "ans"
+                }
+            return {"status": "success", "response": json.dumps(payload)}
+
+        orchestrator = er.EvidenceReviewOrchestrator(
+            task="Task",
+            participants=["A", "B", "C"],
+            call_fn=mock_call,
+            cycles=2
+        )
+        trace = orchestrator.run()
+        self.assertEqual(len(trace["cycles"]), 1)
+        self.assertTrue(trace["cycles"][0].get("converged"))
+        self.assertEqual(trace["synthesis"]["stop_reason"], "completed")
+
+    def test_per_stage_repair_budget_resets_across_stages(self):
+        lock = threading.Lock()
+        failed_once = set()
+
+        def mock_call(provider, prompt, system_prompt):
+            is_repair = "previous response did not conform" in prompt
+            stage = (
+                "stage4" if "Lead Synthesizer" in system_prompt
+                else "stage2" if "expert reviewer" in system_prompt
+                else "stage1"
+            )
+            with lock:
+                if provider == "A" and stage in ("stage1", "stage2") and not is_repair and stage not in failed_once:
+                    failed_once.add(stage)
+                    return {"status": "success", "response": "{not-valid-json"}
+
+            if stage == "stage2":
+                payload = {
+                    "review_id": f"rev-{provider}", "reviewer": provider, "target_participant": "t",
+                    "target_version": 1, "no_substantive_issues": True, "issues": []
+                }
+            elif stage == "stage4":
+                payload = {
+                    "synthesis_id": "syn", "usable_answer": "done", "supported_points": [],
+                    "unresolved_disagreements": [], "evidence_gaps": [], "next_checks": [],
+                    "limitations": [], "stop_reason": "completed"
+                }
+            else:
+                payload = {
+                    "answer_id": f"ans-{provider}-v1", "participant": provider, "version": 1,
+                    "summary": "s", "claims": [{"claim_id": "c1", "statement": "st", "claim_type": "fact"}],
+                    "full_answer": "ans"
+                }
+            return {"status": "success", "response": json.dumps(payload)}
+
+        orchestrator = er.EvidenceReviewOrchestrator(
+            task="Task",
+            participants=["A", "B"],
+            call_fn=mock_call,
+            cycles=1,
+            max_calls=12,
+        )
+        trace = orchestrator.run()
+        self.assertEqual(trace["synthesis"]["stop_reason"], "completed")
+        self.assertEqual(trace["call_stats"]["repairs"], 2)
+        self.assertEqual(trace["call_stats"]["failed_calls"], 0)
 
     def test_version_integer_validation(self):
         s1 = {
