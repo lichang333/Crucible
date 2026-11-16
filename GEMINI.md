@@ -17,9 +17,10 @@ pins a model, the Coordinator automatically selects task-fit models per worker a
 (pairing Gemini 4 / Orchestrator with Claude Opus/Sonnet 5.5 or GPT-OSS 120B) and switches quota/RPM
 buckets automatically on `429` or quota exhaustion without asking the user to pick models. Antigravity
 `/swarm`, `/moa`, and `/auto` sessions can also invoke external/bridged advisors and cross-family reviewers
-— **`grok` (`Grok-4.7` via signed-in OpenCode xAI OAuth subscription at `$0` API spend, or `XAI_API_KEY`)**,
+— **`codex` (`GPT-6-Luna (High)` default + `codex-max` / `gpt-6-luna-max` via signed-in ChatGPT/Codex CLI subscription at `$0` API spend, auto-discovering newer `/Applications/ChatGPT.app` bundled `codex` over stale `/opt/homebrew/bin/codex`)**,
+**`grok` (`Grok-4.7` via signed-in OpenCode xAI OAuth subscription at `$0` API spend, or `XAI_API_KEY`)**,
 **`glm` (`GLM-5.3`)**, **`deepseek` (`DeepSeek-V4-Pro`)**, and **`minimax` (`MiniMax-M3`)** — via
-`skills/moa/moa_runner.py` (`--platform gemini`) and `agy_worker.py review --executor auto|api`
+`skills/moa/moa_runner.py` (`--platform gemini`) and `agy_worker.py review --executor auto|codex|api`
 (especially when the Claude/GPT-OSS quota pool runs low). Read-only
 investigations can run in parallel using native Antigravity subagents. Delegated `/auto` code execution uses an isolated agy worker
 via `agy_worker.py`, the native Claude broker in `shared/claude-local-workflow.md`, or the Claude

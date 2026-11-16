@@ -38,12 +38,16 @@ For native Claude Code subscription execution, use the
 [native CLI workflow](claude-local-workflow.md) and `claude_local.py`.
 
 Prefer available included subscription allowance, following `auto_funding` in the
-shared profile. **`Grok-4.7`** (via local signed-in OpenCode xAI subscription at `$0` API
-cost, or `XAI_API_KEY`), **`GLM-5.3`**, **`DeepSeek-V4-Pro`**, and **`MiniMax-M3`** are
-supported advisors and cross-family patch reviewers through `moa_runner.py` and
-`python3 "$W" review '<run-id>' --executor auto` (or `--model grok` / `--executor api`,
-auto-failing over when `agy` quota pools are exhausted); use prepaid API providers only
-with applicable explicit spending authorization.
+shared profile. **`GPT-6-Luna (High / Max)`** (`codex` / `gpt-6-luna-high` default, plus
+`codex-max` / `gpt-6-luna-max` at `$0` API cost via ChatGPT-authenticated `codex`,
+auto-discovering newer `/Applications/ChatGPT.app` bundled `codex` over stale Homebrew
+installs), **`Grok-4.7`** (via local signed-in OpenCode xAI subscription at `$0` API cost,
+or `XAI_API_KEY`), **`GLM-5.3`**, **`DeepSeek-V4-Pro`**, and **`MiniMax-M3`** are supported
+advisors and cross-family patch reviewers through `moa_runner.py` and
+`python3 "$W" review '<run-id>' --executor auto` (or `--model gpt-6-luna-high` /
+`--model codex-max` / `--model grok` / `--executor api`, auto-failing over across `agy`
+pools -> ChatGPT `codex` -> `grok` / API providers when `agy` quota pools are exhausted);
+use prepaid API providers only with applicable explicit spending authorization.
 
 On quota exhaustion, stop and preserve the partial result. Follow the shared
 workflow's required decision by an available candidate from

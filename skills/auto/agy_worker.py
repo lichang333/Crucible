@@ -190,6 +190,101 @@ def agy_cmd_prefix_and_env(agy_bin):
     return cmd_prefix, env
 
 
+_CHATGPT_APP_CODEX_REL = os.path.join(
+    "Applications",
+    "ChatGPT.app",
+    "Contents",
+    "Resources",
+    "codex-cli",
+    "CodexCLI.app",
+    "Contents",
+    "MacOS",
+    "codex",
+)
+CHATGPT_APP_CODEX_CANDIDATES = (
+    os.path.join("/", _CHATGPT_APP_CODEX_REL),
+    os.path.join("~", _CHATGPT_APP_CODEX_REL),
+)
+_SYSTEM_CODEX_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
+_CODEX_LUNA_RE = re.compile(
+    r"^(?:codex|luna|gpt[- ]?6[- ]?luna)(?:[-:(\s]+(low|medium|high|xhigh|max)\s*\)?)?$",
+    re.I,
+)
+_CODEX_GPT_TIER_RE = re.compile(r"^(gpt-[a-z0-9._-]+?)-(low|medium|high|xhigh|max)$", re.I)
+
+
+def find_codex_bin():
+    """Locate `codex` without subprocess calls, preferring newer ChatGPT.app CLI over stale system installs."""
+    env_bin = os.environ.get("CODEX_BIN")
+    if env_bin:
+        resolved_env_bin = os.path.abspath(os.path.expanduser(env_bin))
+        if os.path.isfile(resolved_env_bin) and os.access(resolved_env_bin, os.X_OK):
+            return resolved_env_bin
+    which_bin = shutil.which("codex")
+    app_bin = next(
+        (
+            os.path.abspath(p)
+            for p in (os.path.expanduser(c) for c in CHATGPT_APP_CODEX_CANDIDATES)
+            if os.path.isfile(p) and os.access(p, os.X_OK)
+        ),
+        None,
+    )
+    if which_bin:
+        abs_which = os.path.abspath(which_bin)
+        if os.path.dirname(abs_which) not in _SYSTEM_CODEX_DIRS:
+            return abs_which
+        if app_bin:
+            try:
+                if os.path.getmtime(os.path.realpath(app_bin)) >= os.path.getmtime(os.path.realpath(abs_which)):
+                    return app_bin
+            except OSError:
+                pass
+        return abs_which
+    if app_bin:
+        return app_bin
+    fallback = os.path.abspath(os.path.join(os.path.expanduser("~"), ".local", "bin", "codex"))
+    return fallback if os.path.isfile(fallback) and os.access(fallback, os.X_OK) else None
+
+
+def has_codex_auth():
+    """Return True when ChatGPT subscription/Codex OAuth auth is available (ignores bare OPENAI_API_KEY)."""
+    codex_home = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+    return bool(
+        os.environ.get("CODEX_AUTH")
+        or os.path.isfile(os.path.join(os.path.expanduser(codex_home), "auth.json"))
+    )
+
+
+def codex_cmd_env():
+    """Safe minimal environment for `codex exec` review runs."""
+    return min_env(**{k: os.environ[k] for k in ("CODEX_HOME", "OPENAI_API_KEY") if k in os.environ})
+
+
+def parse_codex_model_spec(model_arg):
+    """Parse a Codex model/tier spec into (base_model, reasoning_effort, canonical_label)."""
+    if not isinstance(model_arg, str) or not model_arg.strip():
+        return None, None, None
+    raw = re.sub(r"\s+", " ", model_arg.strip())
+    if _infer_api_target(raw)[0] is not None:
+        return None, None, None
+    resolved_agy = resolve_agy_model(raw)
+    low = raw.lower()
+    resolved_low = resolved_agy.lower() if isinstance(resolved_agy, str) else low
+    if low.startswith(("gemini-", "claude-", "gpt-oss-")) or resolved_low.startswith(("gemini-", "claude-", "gpt-oss-")):
+        return None, None, None
+    m_luna = _CODEX_LUNA_RE.match(raw)
+    if m_luna:
+        tier = (m_luna.group(1) or "high").lower()
+        return "gpt-6-luna", tier, f"gpt-6-luna-{tier}"
+    if low.startswith("gpt-") and " " not in raw:
+        m_tier = _CODEX_GPT_TIER_RE.match(raw)
+        if m_tier:
+            base, tier = m_tier.group(1).lower(), m_tier.group(2).lower()
+            return base, tier, f"{base}-{tier}"
+        return raw, None, raw
+    return None, None, None
+
+
 # ---------------------------------------------------------------- helpers
 
 def git(tree, *args, check=True, cwd=None):
@@ -1200,6 +1295,59 @@ def _run_agy_review_once(model_id, review_prompt, timeout, agy_bin=None):
     return True, review_text, None, False
 
 
+def _run_codex_review_once(model_spec, review_prompt, timeout, codex_bin=None):
+    """Execute one read-only `codex exec` review; returns (ok, canonical_model, review_text, err, timed_out)."""
+    codex_bin = codex_bin or find_codex_bin()
+    base_model, effort, canonical_label = parse_codex_model_spec(model_spec)
+    if base_model is None:
+        base_model, effort, canonical_label = model_spec, None, model_spec
+    if not codex_bin:
+        return (
+            False,
+            canonical_label,
+            None,
+            "`codex` command line tool is not found on PATH or ChatGPT.app.",
+            False,
+        )
+    if os.path.sep in codex_bin or (os.path.altsep and os.path.altsep in codex_bin):
+        codex_bin = os.path.abspath(codex_bin)
+    with tempfile.TemporaryDirectory(prefix="auto-codex-review-") as tmp_cwd:
+        fd, out_path = tempfile.mkstemp(prefix="codex-out-", suffix=".txt", dir=tmp_cwd)
+        os.close(fd)
+        cmd = [
+            codex_bin, "exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only",
+            "--color", "never",
+            "-o", out_path,
+            "-m", base_model,
+            *(["-c", f'model_reasoning_effort="{effort}"'] if effort else []),
+            "-",
+        ]
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=review_prompt,
+                cwd=tmp_cwd,
+                env=codex_cmd_env(),
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return False, canonical_label, None, f"timed out after {timeout}s", True
+        except OSError as exc:
+            return False, canonical_label, None, f"failed to launch codex ({exc})", False
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()[:1000]
+            return False, canonical_label, None, f"(exit {proc.returncode}): {detail}", False
+        with open(out_path, "r", encoding="utf-8", errors="replace") as f:
+            review_text = f.read().strip()
+        if not review_text:
+            review_text = (proc.stdout or "").strip()
+        if not review_text:
+            return False, canonical_label, None, "codex review returned empty output.", False
+        return True, canonical_label, review_text, None, False
+
+
 def cmd_review(a):
     m = load(a.run_id)
     patch_file = os.path.join(RUNS, a.run_id, "diff.patch")
@@ -1209,6 +1357,7 @@ def cmd_review(a):
         patch_text = f.read()
 
     api_prov, api_explicit_model = _infer_api_target(a.model)
+    codex_base, _, codex_canon = (None, None, None) if api_prov else parse_codex_model_spec(a.model)
     requested_model = resolve_agy_model(a.model) if a.model else None
     if a.executor:
         executor = a.executor
@@ -1218,17 +1367,29 @@ def cmd_review(a):
         executor = "api"
     elif requested_model.startswith(("gemini-", "claude-", "gpt-oss-")):
         executor = "agy"
+    elif codex_base is not None:
+        executor = "codex"
     else:
         executor = "codex"
 
+    default_codex_model = (
+        ((load_headless_profile().get("providers") or {}).get("codex") or {}).get("model")
+        or "gpt-6-luna-high"
+    )
     if executor == "agy":
         model = requested_model or "gemini-pro-orchestrator"
     elif executor == "codex":
-        model = requested_model or "gpt-6-astra"
+        raw_codex = a.model or default_codex_model
+        model = codex_canon or parse_codex_model_spec(raw_codex)[2] or raw_codex
     elif executor == "api":
         model = api_explicit_model or api_prov or a.model or "api"
     else:
-        model = a.model if api_prov else (requested_model or "gemini-pro-orchestrator")
+        if api_prov:
+            model = a.model
+        elif codex_base is not None:
+            model = codex_canon
+        else:
+            model = requested_model or "gemini-pro-orchestrator"
 
     if not patch_text.strip():
         out = {"run": a.run_id, "executor": executor, "model": model, "status": "empty_patch",
@@ -1282,6 +1443,21 @@ def cmd_review(a):
             fallbacks.extend(api_fallbacks)
             final_executor = "api"
             review_filename, meta_key, banner = "api_review.json", "api_review", "API"
+        elif codex_base is not None:
+            ok, canon, text, err, _ = _run_codex_review_once(a.model, review_prompt, a.timeout)
+            if ok:
+                review_text = text
+                final_executor = "codex"
+                final_model = canon
+                review_filename, meta_key, banner = "codex_review.json", "codex_review", "CODEX"
+            else:
+                fallbacks.append({"executor": "codex", "model": codex_canon, "error": err})
+                win_provider, final_model, review_text, api_fallbacks = _run_api_review(
+                    review_prompt, None, prior_fallbacks=fallbacks
+                )
+                fallbacks.extend(api_fallbacks)
+                final_executor = "api"
+                review_filename, meta_key, banner = "api_review.json", "api_review", "API"
         else:
             agy_bin = find_agy_bin()
             start_model = requested_model or "gemini-pro-orchestrator"
@@ -1306,6 +1482,19 @@ def cmd_review(a):
                         review_filename, meta_key, banner = "agy_review.json", "agy_review", "AGY"
                         break
                     fallbacks.append({"executor": "agy", "model": cand, "error": err})
+            if review_text is None and has_codex_auth():
+                codex_bin = find_codex_bin()
+                if codex_bin:
+                    ok, canon, text, err, _ = _run_codex_review_once(
+                        "gpt-6-luna-high", review_prompt, a.timeout, codex_bin=codex_bin
+                    )
+                    if ok:
+                        review_text = text
+                        final_executor = "codex"
+                        final_model = canon
+                        review_filename, meta_key, banner = "codex_review.json", "codex_review", "CODEX"
+                    else:
+                        fallbacks.append({"executor": "codex", "model": "gpt-6-luna-high", "error": err})
             if review_text is None:
                 win_provider, final_model, review_text, api_fallbacks = _run_api_review(
                     review_prompt, None, prior_fallbacks=fallbacks
@@ -1314,31 +1503,17 @@ def cmd_review(a):
                 final_executor = "api"
                 review_filename, meta_key, banner = "api_review.json", "api_review", "API"
     else:
-        codex_bin = shutil.which("codex")
-        if not codex_bin:
-            sys.exit("REFUSED: `codex` command line tool is not found on PATH. Ensure Codex CLI is installed.")
-        with tempfile.NamedTemporaryFile(mode="r", delete=False) as out_f:
-            out_path = out_f.name
-        try:
-            cmd = [
-                codex_bin, "exec", "--ephemeral", "-s", "read-only",
-                "--color", "never",
-                "-o", out_path,
-                "-m", model,
-                "-"
-            ]
-            try:
-                proc = subprocess.run(cmd, input=review_prompt, text=True, capture_output=True, timeout=a.timeout)
-            except subprocess.TimeoutExpired:
+        raw_target = a.model or default_codex_model
+        ok, canon, review_text, err, timed_out = _run_codex_review_once(raw_target, review_prompt, a.timeout)
+        final_model = canon or final_model
+        if not ok:
+            if timed_out:
                 sys.exit(f"REFUSED: codex review timed out after {a.timeout}s.")
-            if proc.returncode != 0:
-                sys.exit(f"REFUSED: codex review failed (exit {proc.returncode}): {proc.stderr.strip()[:1000]}")
-            with open(out_path, "r", encoding="utf-8", errors="replace") as f:
-                review_text = f.read().strip()
-        finally:
-            if os.path.exists(out_path):
-                with contextlib.suppress(OSError):
-                    os.unlink(out_path)
+            if err and "not found on PATH" in err:
+                sys.exit(f"REFUSED: {err}")
+            if err == "codex review returned empty output.":
+                sys.exit("REFUSED: codex review returned empty output.")
+            sys.exit(f"REFUSED: codex review failed {err}")
         review_filename, meta_key, banner = "codex_review.json", "codex_review", "CODEX"
 
     review_record = {
@@ -1538,9 +1713,9 @@ def main():
     r = sp.add_parser("review")
     r.add_argument("run_id")
     r.add_argument("--executor", choices=["agy", "api", "auto", "codex"],
-                   help="review backend (auto tries agy cross-pool then api; agy uses Google AI Ultra; api uses moa_runner prepaid providers)")
+                   help="review backend (auto tries agy cross-pool, ChatGPT codex, then api; agy uses Google AI Ultra; codex uses ChatGPT/Codex CLI; api uses moa_runner providers)")
     r.add_argument("--model", default=None,
-                   help="model for review (defaults to gemini-pro-orchestrator for agy/auto, deepseek/glm/minimax for api, gpt-6-astra for codex)")
+                   help="model for review (defaults to gemini-pro-orchestrator for agy/auto, grok/deepseek/glm/minimax for api, gpt-6-luna-high or gpt-6-luna-max for codex)")
     r.add_argument("--timeout", type=int, default=600)
     r.add_argument("--json", action="store_true", help="output JSON review record")
     r.set_defaults(fn=cmd_review)

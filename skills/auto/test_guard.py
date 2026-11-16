@@ -175,6 +175,22 @@ CASES = [
     ("persistent command", lambda: run("run_command", {"CommandLine": "ls", "Cwd": ROOT, "RunPersistent": True}), "deny"),
     ("missing root", lambda: cmd("ls", extra_env={"AUTO_WORKER_ROOT": ""}), "deny"),
     ("root = home", lambda: cmd("ls", extra_env={"AUTO_WORKER_ROOT": HOME}), "deny"),
+    # --- Antigravity 2.0 tool names (read_file / write_file / edit_file with Path/Content/Target/Replacement)
+    ("read_file in root", lambda: run("read_file", {"Path": ROOT + "/app/x.py", "StartLine": 1, "EndLine": 10}), "allow"),
+    ("read_file outside", lambda: run("read_file", {"Path": "/etc/hosts"}), "deny"),
+    ("read_file .env", lambda: run("read_file", {"Path": ROOT + "/.env"}), "deny"),
+    ("read_file no path", lambda: run("read_file", {}), "deny"),
+    ("write_file in root", lambda: run("write_file", {"Path": ROOT + "/app/new2.py", "Content": "x = 1", "Overwrite": True}), "allow"),
+    ("write_file artifact", lambda: run("write_file", {"Path": ART + "/notes.md", "Content": "ok", "Overwrite": True}), "allow"),
+    ("write_file outside", lambda: run("write_file", {"Path": HOME + "/evil.py", "Content": "x"}), "deny"),
+    ("write_file .git", lambda: run("write_file", {"Path": ROOT + "/.git", "Content": "gitdir: /tmp"}), "deny"),
+    ("write_file GEMINI.md", lambda: run("write_file", {"Path": ROOT + "/GEMINI.md", "Content": "x"}), "deny"),
+    ("write_file relative", lambda: run("write_file", {"Path": "rel.py", "Content": "x"}), "deny"),
+    ("write_file no path", lambda: run("write_file", {"Content": "x"}), "deny"),
+    ("edit_file in root", lambda: run("edit_file", {"Path": ROOT + "/app/x.py", "Target": "x = 1", "Replacement": "x = 2"}), "allow"),
+    ("edit_file .gemini", lambda: run("edit_file", {"Path": ROOT + "/.gemini/settings.json", "Target": "a", "Replacement": "b"}), "deny"),
+    ("edit_file hard link", lambda: run("edit_file", {"Path": ROOT + "/app/hard.py", "Target": "x", "Replacement": "y"}), "deny"),
+    ("edit_file relative", lambda: run("edit_file", {"Path": "app/x.py", "Target": "x", "Replacement": "y"}), "deny"),
 ]
 
 

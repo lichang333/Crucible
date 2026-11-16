@@ -394,7 +394,7 @@ worker.main()
     r = sh(*W, "run", "--repo", vendored, "--brief", os.path.join(TMP, "brief.md"), "--model", "fake", "--name", "vendored",
            "--node-modules", deps, check=False, env=dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"]))
     leaked = [x for x in os.listdir(os.path.dirname(vtree)) if "-vendored-" in x]
-    # Test legacy review <run-id> with no --executor/--model still selects codex / gpt-6-astra
+    # Test legacy review <run-id> with no --executor/--model selects codex / gpt-6-luna-high
     codex_args = os.path.join(TMP, "codex_args.txt")
     with open(os.path.join(FAKE, "codex"), "w") as f:
         f.write("#!/bin/sh\n"
@@ -407,15 +407,20 @@ worker.main()
                 "exit 0\n")
     os.chmod(os.path.join(FAKE, "codex"), 0o755)
 
-    r = sh(*W, "review", rid, "--json", check=False, env=dict(os.environ, PATH=FAKE + ":" + os.environ["PATH"]))
+    codex_default_env = {k: v for k, v in os.environ.items() if k != "CODEX_BIN"}
+    codex_default_env["PATH"] = FAKE + ":" + os.environ["PATH"]
+    r = sh(*W, "review", rid, "--json", check=False, env=codex_default_env)
     codex_review_path = os.path.join(DIR, "runs", rid, "codex_review.json")
     codex_saved = json.load(open(codex_review_path)) if os.path.isfile(codex_review_path) else {}
     codex_argv = open(codex_args).read().splitlines() if os.path.isfile(codex_args) else []
-    check("review subcommand invokes codex (gpt-6-astra) and saves review record",
+    check("review subcommand invokes codex (gpt-6-luna-high) and saves review record",
           r.returncode == 0 and "Review Verdict: Acceptable" in r.stdout
           and codex_saved.get("executor") == "codex"
-          and codex_saved.get("model") == "gpt-6-astra"
-          and "-m" in codex_argv and "gpt-6-astra" in codex_argv, r.stderr + r.stdout)
+          and codex_saved.get("model") == "gpt-6-luna-high"
+          and "--skip-git-repo-check" in codex_argv
+          and "-m" in codex_argv and "gpt-6-luna" in codex_argv
+          and "-c" in codex_argv and 'model_reasoning_effort="high"' in codex_argv,
+          r.stderr + r.stdout)
 
     # Test opencode protected paths and agy review command with a mock agy in PATH
     oc = run("opencode-protected",
@@ -625,7 +630,7 @@ worker.main()
 
     base_api_env = dict(os.environ, HOME=TMP, PATH=FAKE + ":" + os.environ["PATH"])
     for k in list(base_api_env):
-        if k.startswith("MOCK_"):
+        if k.startswith("MOCK_") or k in ("CODEX_BIN", "CODEX_HOME", "CODEX_AUTH", "OPENAI_API_KEY"):
             base_api_env.pop(k, None)
 
     r_nokey = sh(*W, "review", rid, "--executor", "api", "--json", check=False, env=base_api_env)
@@ -787,6 +792,218 @@ worker.main()
           and "REFUSED: agy review timed out after 5s." in r_timeout.stderr
           and "--dangerously-skip-permissions" not in r_timeout.stderr,
           r_timeout.stderr + r_timeout.stdout)
+
+    # 16. Codex binary auto-discovery (ChatGPT.app vs stale brew), Luna tier specs, and Tier 2 auto failover.
+    codex_spec_cases = {
+        "GPT-6 Luna (Max)": ("gpt-6-luna", "max", "gpt-6-luna-max"),
+        "gpt-6-luna-max": ("gpt-6-luna", "max", "gpt-6-luna-max"),
+        "codex-max": ("gpt-6-luna", "max", "gpt-6-luna-max"),
+        "gpt-6-luna-high": ("gpt-6-luna", "high", "gpt-6-luna-high"),
+        "codex": ("gpt-6-luna", "high", "gpt-6-luna-high"),
+        "luna": ("gpt-6-luna", "high", "gpt-6-luna-high"),
+        "GPT-6 Luna": ("gpt-6-luna", "high", "gpt-6-luna-high"),
+        "gpt-6-astra": ("gpt-6-astra", None, "gpt-6-astra"),
+        "gpt-6-astra-high": ("gpt-6-astra", "high", "gpt-6-astra-high"),
+        "Claude Opus 5.5": (None, None, None),
+        "gpt-oss-120b-medium": (None, None, None),
+        "grok": (None, None, None),
+        "": (None, None, None),
+    }
+    bad_codex_specs = {
+        k: (v, worker_mod.parse_codex_model_spec(k))
+        for k, v in codex_spec_cases.items()
+        if worker_mod.parse_codex_model_spec(k) != v
+    }
+    check("parse_codex_model_spec normalizes Luna/Codex tiers and rejects agy/api models",
+          not bad_codex_specs, json.dumps(bad_codex_specs))
+
+    cbin_root = os.path.join(TMP, "codex_bin_priority")
+    env_bin_dir = os.path.join(cbin_root, "env_override")
+    shim_dir = os.path.join(cbin_root, "shim_bin")
+    fake_brew_dir = os.path.join(cbin_root, "opt", "homebrew", "bin")
+    fake_home_app = os.path.join(cbin_root, "home")
+    app_bin_path = os.path.join(
+        fake_home_app,
+        "Applications", "ChatGPT.app", "Contents", "Resources",
+        "codex-cli", "CodexCLI.app", "Contents", "MacOS", "codex",
+    )
+    env_codex = os.path.join(env_bin_dir, "codex-custom")
+    shim_codex = os.path.join(shim_dir, "codex")
+    brew_codex = os.path.join(fake_brew_dir, "codex")
+    for p in (env_codex, shim_codex, brew_codex, app_bin_path):
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(p, 0o755)
+    os.utime(brew_codex, (1_700_000_000, 1_700_000_000))
+    os.utime(app_bin_path, (1_700_100_000, 1_700_100_000))
+
+    orig_candidates = worker_mod.CHATGPT_APP_CODEX_CANDIDATES
+    orig_sys_dirs = worker_mod._SYSTEM_CODEX_DIRS
+    saved_env = {k: os.environ.get(k) for k in ("CODEX_BIN", "PATH", "HOME")}
+    orig_cwd = os.getcwd()
+    try:
+        worker_mod.CHATGPT_APP_CODEX_CANDIDATES = (
+            os.path.join(cbin_root, "missing-root-app", "codex"),
+            os.path.join("~", "Applications", "ChatGPT.app", "Contents", "Resources",
+                         "codex-cli", "CodexCLI.app", "Contents", "MacOS", "codex"),
+        )
+        worker_mod._SYSTEM_CODEX_DIRS = (os.path.abspath(fake_brew_dir),)
+        os.environ["HOME"] = fake_home_app
+
+        os.environ["CODEX_BIN"] = env_codex
+        os.environ["PATH"] = shim_dir + os.pathsep + fake_brew_dir
+        got_env_bin = worker_mod.find_codex_bin()
+
+        os.chdir(cbin_root)
+        os.environ["CODEX_BIN"] = os.path.join("env_override", "codex-custom")
+        got_rel_env_bin = worker_mod.find_codex_bin()
+        os.environ.pop("CODEX_BIN", None)
+        os.environ["PATH"] = "shim_bin"
+        got_rel_shim_bin = worker_mod.find_codex_bin()
+        os.chdir(orig_cwd)
+
+        os.environ["PATH"] = shim_dir + os.pathsep + fake_brew_dir
+        got_shim_bin = worker_mod.find_codex_bin()
+
+        os.environ["PATH"] = fake_brew_dir
+        got_newer_app = worker_mod.find_codex_bin()
+
+        os.utime(app_bin_path, (1_699_900_000, 1_699_900_000))
+        got_newer_brew = worker_mod.find_codex_bin()
+
+        os.environ["PATH"] = env_bin_dir
+        got_app_only = worker_mod.find_codex_bin()
+    finally:
+        os.chdir(orig_cwd)
+        worker_mod.CHATGPT_APP_CODEX_CANDIDATES = orig_candidates
+        worker_mod._SYSTEM_CODEX_DIRS = orig_sys_dirs
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    check("find_codex_bin respects CODEX_BIN (incl. relative->abs), non-system PATH shims, and ChatGPT.app vs brew mtime",
+          got_env_bin == os.path.abspath(env_codex)
+          and os.path.isabs(got_rel_env_bin) and got_rel_env_bin == os.path.abspath(env_codex)
+          and os.path.isabs(got_rel_shim_bin) and got_rel_shim_bin == os.path.abspath(shim_codex)
+          and got_shim_bin == os.path.abspath(shim_codex)
+          and got_newer_app == os.path.abspath(app_bin_path)
+          and got_newer_brew == os.path.abspath(brew_codex)
+          and got_app_only == os.path.abspath(app_bin_path),
+          json.dumps({
+              "env": got_env_bin,
+              "rel_env": got_rel_env_bin,
+              "rel_shim": got_rel_shim_bin,
+              "shim": got_shim_bin,
+              "newer_app": got_newer_app,
+              "newer_brew": got_newer_brew,
+              "app_only": got_app_only,
+          }))
+
+    empty_home = os.path.join(cbin_root, "empty_home")
+    custom_codex_home = os.path.join(cbin_root, "custom_codex_home")
+    os.makedirs(empty_home, exist_ok=True)
+    os.makedirs(custom_codex_home, exist_ok=True)
+    with open(os.path.join(custom_codex_home, "auth.json"), "w") as f:
+        f.write('{"tokens": {"access_token": "mock"}}\n')
+    saved_auth_env = {k: os.environ.get(k) for k in ("HOME", "CODEX_HOME", "CODEX_AUTH", "OPENAI_API_KEY")}
+    try:
+        os.environ["HOME"] = empty_home
+        for k in ("CODEX_HOME", "CODEX_AUTH", "OPENAI_API_KEY"):
+            os.environ.pop(k, None)
+        auth_none = worker_mod.has_codex_auth()
+
+        os.environ["OPENAI_API_KEY"] = "sk-paid-only"
+        auth_openai_only = worker_mod.has_codex_auth()
+        os.environ.pop("OPENAI_API_KEY", None)
+
+        os.environ["CODEX_HOME"] = custom_codex_home
+        auth_codex_home = worker_mod.has_codex_auth()
+    finally:
+        for k, v in saved_auth_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    check("has_codex_auth detects CODEX_HOME/auth.json and ignores bare OPENAI_API_KEY",
+          auth_none is False and auth_openai_only is False and auth_codex_home is True,
+          json.dumps({"none": auth_none, "openai_only": auth_openai_only, "codex_home": auth_codex_home}))
+
+    if os.path.exists(codex_args):
+        os.unlink(codex_args)
+    if os.path.exists(codex_review_path):
+        os.unlink(codex_review_path)
+    r_luna_max = sh(*W, "review", rid, "--model", "GPT-6 Luna (Max)", "--json", check=False, env=base_api_env)
+    luna_max_saved = json.load(open(codex_review_path)) if os.path.isfile(codex_review_path) else {}
+    luna_max_argv = open(codex_args).read().splitlines() if os.path.isfile(codex_args) else []
+    check("review --model 'GPT-6 Luna (Max)' invokes codex with -m gpt-6-luna + effort=max and saves gpt-6-luna-max",
+          r_luna_max.returncode == 0
+          and luna_max_saved.get("executor") == "codex"
+          and luna_max_saved.get("model") == "gpt-6-luna-max"
+          and "--skip-git-repo-check" in luna_max_argv
+          and "-m" in luna_max_argv and "gpt-6-luna" in luna_max_argv
+          and "-c" in luna_max_argv and 'model_reasoning_effort="max"' in luna_max_argv,
+          r_luna_max.stderr + r_luna_max.stdout)
+
+    if os.path.exists(codex_args):
+        os.unlink(codex_args)
+    if os.path.exists(codex_review_path):
+        os.unlink(codex_review_path)
+    if os.path.exists(api_review_path):
+        os.unlink(api_review_path)
+    tmp_with_codex = os.path.join(TMP, "home_with_codex")
+    os.makedirs(os.path.join(tmp_with_codex, ".codex"), exist_ok=True)
+    with open(os.path.join(tmp_with_codex, ".codex", "auth.json"), "w") as f:
+        f.write('{"tokens": {"access_token": "mock-chatgpt-oauth"}}\n')
+    env_auto_to_codex = dict(base_api_env, HOME=tmp_with_codex)
+    r_auto_codex = sh(*W, "review", rid, "--executor", "auto", "--json", check=False, env=env_auto_to_codex)
+    auto_codex_saved = json.load(open(codex_review_path)) if os.path.isfile(codex_review_path) else {}
+    auto_codex_argv = open(codex_args).read().splitlines() if os.path.isfile(codex_args) else []
+    check("review --executor auto fails over from exhausted agy pools to authenticated codex (gpt-6-luna-high)",
+          r_auto_codex.returncode == 0
+          and not os.path.exists(api_review_path)
+          and auto_codex_saved.get("executor") == "codex"
+          and auto_codex_saved.get("model") == "gpt-6-luna-high"
+          and [fb.get("model") for fb in auto_codex_saved.get("fallbacks", [])] == [
+              "gemini-pro-orchestrator", "claude-opus-5-5-high", "gpt-oss-120b-medium"
+          ]
+          and "-m" in auto_codex_argv and "gpt-6-luna" in auto_codex_argv
+          and "-c" in auto_codex_argv and 'model_reasoning_effort="high"' in auto_codex_argv,
+          r_auto_codex.stderr + r_auto_codex.stdout)
+
+    broken_codex = os.path.join(cbin_root, "broken-codex")
+    with open(broken_codex, "w") as f:
+        f.write("#!/nonexistent_codex_interpreter_for_test/sh\nexit 0\n")
+    os.chmod(broken_codex, 0o755)
+    if os.path.exists(codex_review_path):
+        os.unlink(codex_review_path)
+    if os.path.exists(api_review_path):
+        os.unlink(api_review_path)
+    env_broken_codex_to_api = dict(
+        base_api_env,
+        HOME=tmp_with_codex,
+        CODEX_BIN=broken_codex,
+        MOCK_GLM_KEY="k-glm",
+        MOCK_API_BEHAVIOR=json.dumps({
+            "glm": {"status": "success", "response": "Review Verdict: Acceptable (broken-codex->glm)"}
+        }),
+    )
+    r_broken_codex = sh(*W, "review", rid, "--executor", "auto", "--json",
+                        check=False, env=env_broken_codex_to_api)
+    broken_codex_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    broken_fallbacks = broken_codex_saved.get("fallbacks", [])
+    check("review --executor auto catches broken codex OSError, records fallback, and fails over to api (glm)",
+          r_broken_codex.returncode == 0
+          and broken_codex_saved.get("executor") == "api"
+          and broken_codex_saved.get("provider") == "glm"
+          and [fb.get("model") for fb in broken_fallbacks] == [
+              "gemini-pro-orchestrator", "claude-opus-5-5-high", "gpt-oss-120b-medium", "gpt-6-luna-high"
+          ]
+          and broken_fallbacks[-1].get("executor") == "codex"
+          and "failed to launch codex" in broken_fallbacks[-1].get("error", ""),
+          r_broken_codex.stderr + r_broken_codex.stdout)
 
     for rid in CREATED:
         sh(*W, "clean", rid, check=False)

@@ -62,8 +62,13 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(codex["native_roles"]["planner"], "gpt-6-astra")
         self.assertEqual(codex["agy_routes"]["l1"], claude["agy_routes"]["l1"])
         self.assertEqual(headless["reviewer"]["model"], "glm-5.3")
+        self.assertEqual(headless["providers"]["codex"], {"model": "gpt-6-luna-high", "display_name": "GPT-6-Luna (High)"})
         self.assertEqual(headless["providers"]["glm"], {"model": "glm-5.3", "display_name": "GLM-5.3"})
         self.assertEqual(headless["providers"]["deepseek"], {"model": "deepseek-v4-pro", "display_name": "DeepSeek-V4-Pro"})
+        self.assertEqual(headless["api_advisors"]["providers"], ["grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(headless["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(headless["aggregation_priority"], ["agy", "codex", "grok", "deepseek", "glm", "minimax"])
+        self.assertEqual(codex["worker_defaults"], ["agy", "grok", "glm", "deepseek", "minimax"])
 
     def test_config_preview_does_not_read_keys_call_models_or_create_records(self):
         for alias in ("--show-config", "--dry-run"):
@@ -412,32 +417,61 @@ class RunnerTests(unittest.TestCase):
     def test_cursor_profile_uses_agy_orchestrator_and_raw_mode(self):
         cfg = runner.load_config("cursor")
         self.assertEqual(cfg["mode"], "raw")
-        self.assertEqual(cfg["worker_defaults"], ["agy", "grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(cfg["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(runner.load_config("codex")["worker_defaults"], ["agy", "grok", "glm", "deepseek", "minimax"])
         self.assertEqual(cfg["reviewer"]["provider"], "agy")
         self.assertEqual(cfg["reviewer"]["model"], "gemini-pro-orchestrator")
         self.assertEqual(cfg["agy_routes"]["l1"], "gemini-4-carbon-high")
         self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator", "gemini-4-carbon-high"])
 
     def test_codex_adapter_calls_cli_without_network(self):
-        codex_model = "gpt-6-astra"
-        def fake_run(cmd, input=None, text=True, capture_output=True, timeout=None):
+        def fake_run(cmd, input=None, cwd=None, env=None, text=True, capture_output=True, timeout=None):
+            self.assertTrue(cwd and Path(cwd).is_dir())
+            self.assertIsNotNone(env)
+            self.assertNotIn("DEEPSEEK_API_KEY", env)
+            self.assertEqual(env.get("HOME"), str(self.root / "fake-home"))
+            self.assertEqual(env.get("CODEX_HOME"), str(self.root / "fake-codex-home"))
             out_idx = cmd.index("-o") + 1
             out_file = cmd[out_idx]
             Path(out_file).write_text("codex answer")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with patch.object(runner.subprocess, "run", side_effect=fake_run) as mock_sub:
-            answer = runner.call_model("codex", "question", "synthetic-key", codex_model,
+        os.environ.update(
+            DEEPSEEK_API_KEY="secret-must-not-leak",
+            HOME=str(self.root / "fake-home"),
+            CODEX_HOME=str(self.root / "fake-codex-home"),
+            OPENAI_API_KEY="openai-allowed-key",
+        )
+        with patch.object(runner, "codex_executable", return_value="/usr/local/bin/codex"), \
+                patch.object(runner.subprocess, "run", side_effect=fake_run) as mock_sub:
+            answer = runner.call_model("codex", "question", "synthetic-key", "gpt-6-astra",
                                        system_prompt=runner.WORKER_RULES)
             self.assertEqual(answer, "codex answer")
             mock_sub.assert_called_once()
             cmd, kwargs = mock_sub.call_args[0][0], mock_sub.call_args[1]
-            self.assertIn("codex", cmd[0])
+            self.assertEqual(cmd[0], "/usr/local/bin/codex")
             self.assertIn("exec", cmd)
-            self.assertIn("-m", cmd)
-            self.assertIn(codex_model, cmd)
+            self.assertIn("--skip-git-repo-check", cmd)
+            self.assertEqual(cmd[cmd.index("-m") + 1], "gpt-6-astra")
+            self.assertNotIn("-c", cmd)
+            self.assertEqual(kwargs["timeout"], 120)
+            self.assertEqual(kwargs["env"].get("OPENAI_API_KEY"), "openai-allowed-key")
             self.assertIn(runner.WORKER_RULES, kwargs["input"])
             self.assertIn("question", kwargs["input"])
+
+        with patch.object(runner, "codex_executable", return_value="/Applications/ChatGPT.app/codex"), \
+                patch.object(runner.subprocess, "run", side_effect=fake_run) as mock_luna:
+            answer = runner.call_model("codex", "question", "installed", "gpt-6-luna-max",
+                                       system_prompt=runner.WORKER_RULES)
+            self.assertEqual(answer, "codex answer")
+            mock_luna.assert_called_once()
+            cmd_max, kwargs_max = mock_luna.call_args[0][0], mock_luna.call_args[1]
+            self.assertEqual(cmd_max[0], "/Applications/ChatGPT.app/codex")
+            self.assertIn("--skip-git-repo-check", cmd_max)
+            self.assertEqual(cmd_max[cmd_max.index("-m") + 1], "gpt-6-luna")
+            self.assertIn("-c", cmd_max)
+            self.assertEqual(cmd_max[cmd_max.index("-c") + 1], 'model_reasoning_effort="max"')
+            self.assertEqual(kwargs_max["timeout"], 180)
 
 
     def test_cross_review_mode_in_show_config(self):
@@ -510,13 +544,31 @@ class RunnerTests(unittest.TestCase):
         with patch.object(runner, "env_paths", return_value=(skill_env, home_env, desktop_env)), \
                 patch.object(runner, "agy_executable", return_value=None), \
                 patch.object(runner, "has_opencode_xai_auth", return_value=False), \
-                patch.object(runner.shutil, "which", return_value=None):
+                patch.object(runner, "codex_executable", return_value=None), \
+                patch.object(runner, "has_codex_auth", return_value=False):
             _REAL_LOAD_ENV()
 
         self.assertEqual(os.environ["OPENAI_API_KEY"], "from-process-env")
         self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "from-skill")
         self.assertEqual(os.environ["ZHIPUAI_API_KEY"], "from-home")
         self.assertEqual(os.environ["MINIMAX_API_KEY"], "from-desktop")
+        self.assertNotIn("CODEX_CLI", os.environ)
+
+        with patch.object(runner, "env_paths", return_value=()), \
+                patch.object(runner, "agy_executable", return_value=None), \
+                patch.object(runner, "has_opencode_xai_auth", return_value=False), \
+                patch.object(runner, "codex_executable", return_value="/app/codex"), \
+                patch.object(runner, "has_codex_auth", return_value=False):
+            _REAL_LOAD_ENV()
+        self.assertNotIn("CODEX_CLI", os.environ)
+
+        with patch.object(runner, "env_paths", return_value=()), \
+                patch.object(runner, "agy_executable", return_value=None), \
+                patch.object(runner, "has_opencode_xai_auth", return_value=False), \
+                patch.object(runner, "codex_executable", return_value="/app/codex"), \
+                patch.object(runner, "has_codex_auth", return_value=True):
+            _REAL_LOAD_ENV()
+        self.assertEqual(os.environ.get("CODEX_CLI"), "installed")
 
     def test_review_failover_when_primary_glm_fails(self):
         os.environ.update(
@@ -779,6 +831,198 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("[REDACTED]", stdout)
         self.assertNotIn("synthetic-secret", stdout)
         self.assertIn("Summary: 0/1 providers healthy.", stdout)
+
+    def test_codex_executable_priority_and_has_codex_auth(self):
+        fake_home = self.root / "codex_home_root"
+        fake_home.mkdir()
+        app_codex = self.root / "ChatGPT.app" / "codex"
+        app_codex.parent.mkdir(parents=True)
+        app_codex.write_text("#!/bin/sh\n")
+        app_codex.chmod(0o755)
+
+        brew_file = self.root / "brew_codex_target"
+        brew_file.write_text("#!/bin/sh\n")
+        brew_file.chmod(0o755)
+
+        custom_shim = self.root / "custom_shim_dir" / "codex"
+        custom_shim.parent.mkdir(parents=True)
+        custom_shim.write_text("#!/bin/sh\n")
+        custom_shim.chmod(0o755)
+
+        override_bin = self.root / "override_codex"
+        override_bin.write_text("#!/bin/sh\n")
+        override_bin.chmod(0o755)
+
+        non_exec = self.root / "non_exec_codex"
+        non_exec.write_text("not executable\n")
+        non_exec.chmod(0o644)
+
+        real_realpath = os.path.realpath
+
+        def fake_realpath(p):
+            if p == "/opt/homebrew/bin/codex":
+                return str(brew_file)
+            return real_realpath(p)
+
+        with patch.object(runner.subprocess, "run", side_effect=AssertionError("subprocess forbidden")), \
+                patch.object(runner.Path, "home", return_value=fake_home), \
+                patch.object(runner, "CHATGPT_APP_CODEX_CANDIDATES", (str(app_codex),)), \
+                patch.object(runner.os.path, "realpath", side_effect=fake_realpath):
+            # 1. Newer ChatGPT.app binary beats /opt/homebrew/bin/codex
+            os.utime(brew_file, (1000, 1000))
+            os.utime(app_codex, (2000, 2000))
+            with patch.object(runner.shutil, "which", return_value="/opt/homebrew/bin/codex"):
+                self.assertEqual(runner.codex_executable(), str(app_codex))
+
+            # Older ChatGPT.app binary loses to newer /opt/homebrew/bin/codex
+            os.utime(brew_file, (3000, 3000))
+            with patch.object(runner.shutil, "which", return_value="/opt/homebrew/bin/codex"):
+                self.assertEqual(runner.codex_executable(), "/opt/homebrew/bin/codex")
+
+            # 2. Non-system PATH shim (including relative path) beats newer ChatGPT.app binary and returns abs path
+            os.utime(app_codex, (5000, 5000))
+            os.utime(custom_shim, (1000, 1000))
+            rel_shim = os.path.relpath(custom_shim, os.getcwd())
+            with patch.object(runner.shutil, "which", return_value=rel_shim):
+                resolved_shim = runner.codex_executable()
+                self.assertTrue(os.path.isabs(resolved_shim))
+                self.assertEqual(resolved_shim, os.path.abspath(str(custom_shim)))
+
+            # 3. CODEX_BIN override (including relative path) wins as an absolute path; non-executable is ignored
+            rel_override = os.path.relpath(override_bin, os.getcwd())
+            self.assertFalse(os.path.isabs(rel_override))
+            os.environ["CODEX_BIN"] = rel_override
+            with patch.object(runner.shutil, "which", return_value=str(custom_shim)):
+                resolved_override = runner.codex_executable()
+                self.assertTrue(os.path.isabs(resolved_override))
+                self.assertEqual(resolved_override, os.path.abspath(str(override_bin)))
+            os.environ["CODEX_BIN"] = str(non_exec)
+            with patch.object(runner.shutil, "which", return_value=str(custom_shim)):
+                self.assertEqual(runner.codex_executable(), os.path.abspath(str(custom_shim)))
+            os.environ.pop("CODEX_BIN", None)
+
+            # 4. Dynamic ~/Applications/... expansion and fallback to ~/.local/bin/codex
+            user_app_codex = fake_home / "Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
+            user_app_codex.parent.mkdir(parents=True)
+            user_app_codex.write_text("#!/bin/sh\n")
+            user_app_codex.chmod(0o755)
+            with patch.object(runner, "CHATGPT_APP_CODEX_CANDIDATES",
+                              ("~/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",)), \
+                    patch.object(runner.shutil, "which", return_value=None):
+                self.assertEqual(runner.codex_executable(), os.path.abspath(str(user_app_codex)))
+
+            with patch.object(runner, "CHATGPT_APP_CODEX_CANDIDATES", ()), \
+                    patch.object(runner.shutil, "which", return_value=None):
+                self.assertIsNone(runner.codex_executable())
+                local_codex = fake_home / ".local" / "bin" / "codex"
+                local_codex.parent.mkdir(parents=True)
+                local_codex.write_text("#!/bin/sh\n")
+                local_codex.chmod(0o755)
+                self.assertEqual(runner.codex_executable(), os.path.abspath(str(local_codex)))
+
+            # 5. has_codex_auth checks env vars, $CODEX_HOME/auth.json, and ~/.codex/auth.json
+            self.assertFalse(runner.has_codex_auth())
+            os.environ["CODEX_AUTH"] = "1"
+            self.assertTrue(runner.has_codex_auth())
+            os.environ.pop("CODEX_AUTH")
+            os.environ["OPENAI_API_KEY"] = "sk-test"
+            self.assertTrue(runner.has_codex_auth())
+            os.environ.pop("OPENAI_API_KEY")
+
+            custom_codex_home = self.root / "custom_codex_home"
+            custom_codex_home.mkdir()
+            (custom_codex_home / "auth.json").write_text('{"tokens": {}}')
+            os.environ["CODEX_HOME"] = str(custom_codex_home)
+            self.assertFalse((fake_home / ".codex" / "auth.json").exists())
+            self.assertTrue(runner.has_codex_auth())
+            os.environ.pop("CODEX_HOME")
+            self.assertFalse(runner.has_codex_auth())
+
+            auth_file = fake_home / ".codex" / "auth.json"
+            auth_file.parent.mkdir(parents=True)
+            auth_file.write_text('{"tokens": {}}')
+            self.assertTrue(runner.has_codex_auth())
+
+    def test_codex_inline_effort_selectors_in_show_config_raw_and_doctor(self):
+        self.assertEqual(runner.parse_codex_model_spec(None), ("gpt-6-luna", "high"))
+        self.assertEqual(runner.parse_codex_model_spec(""), ("gpt-6-luna", "high"))
+        self.assertEqual(runner.parse_codex_model_spec("codex-max"), ("gpt-6-luna", "max"))
+        self.assertEqual(runner.parse_codex_model_spec("gpt-6-luna-max"), ("gpt-6-luna", "max"))
+        self.assertEqual(runner.parse_codex_model_spec("GPT-6-Luna (XHigh)"), ("gpt-6-luna", "xhigh"))
+        self.assertEqual(runner.parse_codex_model_spec("gpt-6-luna"), ("gpt-6-luna", None))
+        self.assertEqual(runner.parse_codex_model_spec("gpt-6-astra-high"), ("gpt-6-astra", "high"))
+        self.assertEqual(runner.parse_codex_model_spec("gpt-6-astra"), ("gpt-6-astra", None))
+        self.assertEqual(runner.parse_codex_model_spec("gpt-oss-120b-medium"), ("gpt-oss-120b-medium", None))
+
+        for selector in ("codex-max", "gpt-6-luna-max", "codex,codex-max"):
+            with self.subTest(selector=selector, mode="show_config"):
+                code, stdout, stderr, call = self.invoke(["--models", selector, "--show-config"])
+                self.assertEqual(code, 0, stderr)
+                cfg = json.loads(stdout)
+                self.assertEqual(
+                    cfg["selected_workers"],
+                    [{"provider": "codex", "model": "gpt-6-luna-max", "display_name": "GPT-6-Luna (Max)"}],
+                )
+                self.assertEqual(
+                    cfg["providers"]["codex"],
+                    {"model": "gpt-6-luna-max", "display_name": "GPT-6-Luna (Max)"},
+                )
+                call.assert_not_called()
+
+        os.environ["CODEX_CLI"] = "installed"
+        for selector in ("codex-max", "gpt-6-luna-max"):
+            with self.subTest(selector=selector, mode="raw"):
+                for old_rec in runner.RUNS_DIR.glob("*.json"):
+                    old_rec.unlink()
+                seen_cmds = []
+
+                def fake_codex_exec(cmd, input=None, cwd=None, env=None, text=True, capture_output=True, timeout=None):
+                    seen_cmds.append((cmd, timeout))
+                    Path(cmd[cmd.index("-o") + 1]).write_text("luna max answer")
+                    return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+                stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
+                with patch.object(runner, "codex_executable", return_value="/Applications/ChatGPT.app/codex"), \
+                        patch.object(runner.subprocess, "run", side_effect=fake_codex_exec), \
+                        redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                    code = runner.main(["--models", selector, "--raw", "question"])
+                self.assertEqual(code, 0, stderr_buf.getvalue())
+                self.assertEqual(self.raw_response(stdout_buf.getvalue()), {"GPT-6-Luna (Max)": "luna max answer"})
+                self.assertEqual(len(seen_cmds), 1)
+                cmd, used_timeout = seen_cmds[0]
+                self.assertEqual(cmd[cmd.index("-m") + 1], "gpt-6-luna")
+                self.assertIn("-c", cmd)
+                self.assertEqual(cmd[cmd.index("-c") + 1], 'model_reasoning_effort="max"')
+                self.assertEqual(used_timeout, 180)
+                rec = self.record()
+                self.assertEqual(
+                    rec["worker_configuration"],
+                    [{"provider": "codex", "model": "gpt-6-luna-max", "display_name": "GPT-6-Luna (Max)"}],
+                )
+
+        for selector in ("codex-max", "gpt-6-luna-max"):
+            with self.subTest(selector=selector, mode="doctor"):
+                recorded = {}
+
+                def probe(provider, prompt, api_key, model, system_prompt=None, max_tokens=None, timeout=None):
+                    recorded[provider] = (api_key, model, max_tokens, timeout)
+                    return "PONG"
+
+                code, stdout, stderr, _ = self.invoke(["--models", selector, "--doctor"], side_effect=probe)
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("gpt-6-luna-max", stdout)
+                self.assertIn("Local CLI", stdout)
+                self.assertEqual(recorded["codex"], ("installed", "gpt-6-luna-max", 128, 120))
+
+        recorded_std = {}
+        code, stdout, stderr, _ = self.invoke(
+            ["--models", "codex", "--doctor"],
+            side_effect=lambda p, pr, k, m, system_prompt=None, max_tokens=None, timeout=None: (
+                recorded_std.setdefault(p, (k, m, max_tokens, timeout)) and "PONG"
+            ),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(recorded_std["codex"], ("installed", "gpt-6-luna-high", 128, 35))
 
 
 if __name__ == "__main__":
