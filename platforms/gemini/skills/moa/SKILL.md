@@ -18,12 +18,14 @@ external provider settings from the common profile.
   ```bash
   python3 "$HOME/.gemini/config/skills/moa/moa_runner.py" --platform gemini --raw \
     --coordinator-model '<actual-model-or-current>' --task-id '<task-id>' \
-    --models grok,deepseek,glm,minimax -- '<question>'
+    --models codex,grok,deepseek,glm,minimax -- '<question>'
   ```
 
-  `--models grok,deepseek,glm,minimax` illustrates selecting external/bridged providers
-  (`grok` automatically reuses a local signed-in OpenCode xAI subscription at `$0` API spend,
-  or falls back to `XAI_API_KEY`/`GROK_API_KEY`). Inspect
+  `--models codex,grok,deepseek,glm,minimax` illustrates selecting external/bridged providers
+  (`codex` defaults to `GPT-6-Luna (High)` via the local signed-in ChatGPT/Codex CLI or
+  `OPENAI_API_KEY`, and accepts inline effort selectors such as `codex-max` or `gpt-6-luna-max`
+  for `GPT-6-Luna (Max)`; `grok` automatically reuses a local signed-in OpenCode xAI subscription
+  at `$0` API spend, or falls back to `XAI_API_KEY`/`GROK_API_KEY`). Inspect
   `--show-config` without making a model call. External HTTP calls use their API keys
   and billing; native subagents use the host's own model access.
 - Use Antigravity's available web/search tools for current information. Synthesize successful

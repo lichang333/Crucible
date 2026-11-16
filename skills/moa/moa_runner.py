@@ -36,6 +36,11 @@ KEY_NAMES = {
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "codex": ("CODEX_CLI", "CODEX_AUTH"),
 }
+CHATGPT_APP_CODEX_CANDIDATES = (
+    "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+    "~/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+)
+CODEX_EFFORT_TIERS = ("low", "medium", "high", "xhigh", "max")
 
 ENDPOINTS = {
     "grok": "https://api.x.ai/v1/chat/completions",
@@ -111,6 +116,89 @@ def agy_executable():
     return str(fallback) if fallback.is_file() else None
 
 
+def _expand_user_path(raw):
+    if raw == "~":
+        return os.path.abspath(str(Path.home()))
+    if raw.startswith("~/"):
+        return os.path.abspath(str(Path.home() / raw[2:]))
+    return os.path.abspath(os.path.expanduser(raw))
+
+
+def codex_executable():
+    env_bin = os.environ.get("CODEX_BIN")
+    if env_bin:
+        resolved_env_bin = _expand_user_path(env_bin)
+        if os.path.isfile(resolved_env_bin) and os.access(resolved_env_bin, os.X_OK):
+            return resolved_env_bin
+    which_bin = shutil.which("codex")
+    app_candidates = (_expand_user_path(p) for p in CHATGPT_APP_CODEX_CANDIDATES)
+    app_bin = next((p for p in app_candidates if os.path.isfile(p) and os.access(p, os.X_OK)), None)
+    if which_bin:
+        abs_which = os.path.abspath(which_bin)
+        if os.path.dirname(abs_which) not in ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"):
+            return abs_which
+        if app_bin:
+            try:
+                if os.path.getmtime(os.path.realpath(app_bin)) >= os.path.getmtime(os.path.realpath(abs_which)):
+                    return app_bin
+            except OSError:
+                pass
+        return abs_which
+    if app_bin:
+        return app_bin
+    fallback = Path.home() / ".local" / "bin" / "codex"
+    return os.path.abspath(str(fallback)) if os.path.isfile(fallback) and os.access(fallback, os.X_OK) else None
+
+
+def has_codex_auth():
+    # Headless detection stays subprocess-free and checks CODEX_AUTH, OPENAI_API_KEY, or $CODEX_HOME/auth.json.
+    if os.environ.get("CODEX_AUTH") or os.environ.get("OPENAI_API_KEY"):
+        return True
+    codex_home = (
+        Path(_expand_user_path(os.environ["CODEX_HOME"]))
+        if os.environ.get("CODEX_HOME")
+        else (Path.home() / ".codex")
+    )
+    return (codex_home / "auth.json").is_file()
+
+
+def parse_codex_model_spec(spec):
+    raw = (spec or "").strip() if isinstance(spec, str) else ""
+    if not raw:
+        raw = "gpt-6-luna-high"
+    tiers = "|".join(CODEX_EFFORT_TIERS)
+    luna_match = re.match(rf"^(?:codex|luna|gpt[- ]?6[- ]?luna)(?:[-:(\s]+({tiers})\)?)?$", raw, re.IGNORECASE)
+    if luna_match:
+        tier = luna_match.group(1)
+        return ("gpt-6-luna", tier.lower() if tier else None)
+    if not raw.lower().startswith("gpt-oss-"):
+        gpt_match = re.match(rf"^(gpt-[^\s:]+?)[-:]({tiers})$", raw, re.IGNORECASE)
+        if gpt_match:
+            return (gpt_match.group(1), gpt_match.group(2).lower())
+    return (raw, None)
+
+
+def resolve_model_token(token, providers_cfg):
+    clean = token.strip() if isinstance(token, str) else ""
+    if clean in providers_cfg and clean in KEY_NAMES:
+        return clean, dict(providers_cfg[clean])
+    if "codex" in providers_cfg:
+        tiers = "|".join(CODEX_EFFORT_TIERS)
+        match = re.match(rf"^(?:codex|luna|gpt-6-luna)(?:[-:]({tiers}))?$", clean, re.IGNORECASE)
+        if match:
+            tier = match.group(1).lower() if match.group(1) else None
+            settings = dict(providers_cfg["codex"])
+            settings["model"] = f"gpt-6-luna-{tier}" if tier else "gpt-6-luna"
+            if tier == "xhigh":
+                settings["display_name"] = "GPT-6-Luna (XHigh)"
+            elif tier:
+                settings["display_name"] = f"GPT-6-Luna ({tier.capitalize()})"
+            else:
+                settings["display_name"] = "GPT-6-Luna"
+            return "codex", settings
+    raise ValueError(f"Unknown external API provider: {clean}; native agents are managed by the session")
+
+
 def opencode_executable():
     found = shutil.which("opencode")
     if found:
@@ -165,7 +253,7 @@ def load_env():
         os.environ["AGY_CLI"] = "installed"
     if has_opencode_xai_auth() and not os.environ.get("OPENCODE_XAI_AUTH"):
         os.environ["OPENCODE_XAI_AUTH"] = "opencode-oauth"
-    if shutil.which("codex") and not os.environ.get("CODEX_CLI"):
+    if codex_executable() and has_codex_auth() and not os.environ.get("CODEX_CLI"):
         os.environ["CODEX_CLI"] = "installed"
 
 
@@ -220,24 +308,41 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
             raise ValueError("Empty or invalid model response from agy")
         return content.strip()
     if provider == "codex":
-        codex_bin = shutil.which("codex") or "codex"
+        codex_bin = codex_executable() or "codex"
+        base_model, effort = parse_codex_model_spec(model or "gpt-6-luna-high")
         full_prompt = prompt
         if system_prompt:
             full_prompt = f"<system_instructions>\n{system_prompt}\n</system_instructions>\n\n{prompt}"
-        eff_timeout = 90 if timeout is None else timeout
+        eff_timeout = (180 if effort in ("max", "xhigh") else 120) if timeout is None else timeout
+        safe_env = {
+            k: os.environ[k]
+            for k in ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM", "TMPDIR")
+            if k in os.environ
+        }
+        if os.environ.get("CODEX_HOME"):
+            safe_env["CODEX_HOME"] = _expand_user_path(os.environ["CODEX_HOME"])
+        if "OPENAI_API_KEY" in os.environ:
+            safe_env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
         with tempfile.NamedTemporaryFile(mode="r", delete=False) as out_f:
             out_path = out_f.name
         try:
-            cmd = [
-                codex_bin, "exec", "--ephemeral", "-s", "read-only",
-                "--color", "never",
-                "-o", out_path,
-                "-m", model or "gpt-6-astra",
-                "-"
-            ]
-            proc = subprocess.run(cmd, input=full_prompt, text=True, capture_output=True, timeout=eff_timeout)
+            cmd = (
+                [
+                    codex_bin, "exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only",
+                    "--color", "never",
+                    "-o", out_path,
+                    "-m", base_model,
+                ]
+                + (["-c", f'model_reasoning_effort="{effort}"'] if effort else [])
+                + ["-"]
+            )
+            with tempfile.TemporaryDirectory(prefix="moa-codex-") as tmp_cwd:
+                proc = subprocess.run(
+                    cmd, input=full_prompt, cwd=tmp_cwd, env=safe_env,
+                    text=True, capture_output=True, timeout=eff_timeout,
+                )
             if proc.returncode != 0:
-                raise RuntimeError(f"codex exec failed (exit {proc.returncode}): {proc.stderr.strip()[:1000]}")
+                raise RuntimeError(f"codex exec failed (exit {proc.returncode}): {(proc.stderr or '').strip()[:1000]}")
             with open(out_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
         finally:
@@ -458,7 +563,7 @@ def parser():
                         help="Defaults to the platform entrypoint, or headless for the shared script")
     result.add_argument("--coordinator-model", default="current", help="Session model metadata; never an API provider")
     result.add_argument("--task-id")
-    result.add_argument("--models", help="Comma-separated external providers, e.g. agy,deepseek,minimax")
+    result.add_argument("--models", help="Comma-separated external providers, e.g. agy,codex,codex-max,grok,deepseek,minimax")
     result.add_argument("--raw", action="store_true", help="Return worker JSON without an API aggregator")
     result.add_argument("--review", "--glm52", dest="review", action="store_true")
     result.add_argument("--cross-review", "--evidence-review", dest="cross_review", action="store_true",
@@ -477,13 +582,24 @@ def main(argv=None):
     args = cli.parse_args(argv)
     try:
         config = load_config(args.platform)
-        selected = config["worker_defaults"] if args.models is None else list(dict.fromkeys(
-            name.strip() for name in args.models.split(",") if name.strip()))
-        if not selected:
-            raise ValueError("--models must select at least one external provider")
-        for provider in selected:
-            if provider not in config["providers"] or provider not in KEY_NAMES:
-                raise ValueError(f"Unknown external API provider: {provider}; native agents are managed by the session")
+        base_providers = config["providers"]
+        providers = {k: dict(v) for k, v in base_providers.items()}
+        if args.models is None:
+            selected = list(config["worker_defaults"])
+            for provider in selected:
+                if provider not in providers or provider not in KEY_NAMES:
+                    raise ValueError(f"Unknown external API provider: {provider}; native agents are managed by the session")
+        else:
+            tokens = [name.strip() for name in args.models.split(",") if name.strip()]
+            if not tokens:
+                raise ValueError("--models must select at least one external provider")
+            selected = []
+            for token in tokens:
+                prov, settings = resolve_model_token(token, base_providers)
+                providers[prov] = settings
+                if prov not in selected:
+                    selected.append(prov)
+        config["providers"] = providers
     except (OSError, ValueError, KeyError, TypeError) as error:
         cli.error(str(error))
 
@@ -518,7 +634,10 @@ def main(argv=None):
                     "latency": "-",
                     "details": "Key missing or CLI not found",
                 }
-            probe_timeout = 35 if ptype != "API" else 20
+            if name == "codex" and parse_codex_model_spec(settings["model"])[1] in ("max", "xhigh"):
+                probe_timeout = 120
+            else:
+                probe_timeout = 35 if ptype != "API" else 20
             t0 = time.monotonic()
             try:
                 res = call_model(

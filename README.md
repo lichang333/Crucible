@@ -2,16 +2,18 @@
 
 Separate platform instructions, one shared implementation. The current host session
 triages tasks and integrates changes, while subscription-backed workers (**Google AI Ultra**
-via `agy` CLI at zero marginal API cost across 8 active families / 19 variants, plus
-bridged **`grok`** (`Grok-4.7` via signed-in OpenCode xAI OAuth subscription at zero API
-cost or `XAI_API_KEY`), optional prepaid APIs `glm` (`GLM-5.3`), `deepseek`
-(`DeepSeek-V4-Pro`), and `minimax` (`MiniMax-M3`), and optional Claude Code subscription
-bridges) provide parallel Q&A analysis, isolated coding slices, and cross-family
-cold-eyes verification.
+via `agy` CLI at zero marginal API cost across 8 active families / 19 variants,
+ChatGPT-authenticated **`codex`** (`GPT-6-Luna (High)` / `gpt-6-luna-high` default plus
+`codex-max` / `gpt-6-luna-max` at zero API cost, auto-preferring newer
+`/Applications/ChatGPT.app` bundled `codex` over stale Homebrew binaries), bridged
+**`grok`** (`Grok-4.7` via signed-in OpenCode xAI OAuth subscription at zero API cost or
+`XAI_API_KEY`), optional prepaid APIs `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`),
+and `minimax` (`MiniMax-M3`), and optional Claude Code subscription bridges) provide
+parallel Q&A analysis, isolated coding slices, and cross-family cold-eyes verification.
 
 | Workflow | Purpose | Execution |
 |---|---|---|
-| `/moa` | Multi-model Q&A and analysis | Read-only `agy` (`Orchestrator (Carbon)`) + `grok` (OpenCode xAI subscription or `XAI_API_KEY`) + configured API answers (`glm`/`deepseek`/`minimax`); current-session synthesis |
+| `/moa` | Multi-model Q&A and analysis | Read-only `agy` (`Orchestrator (Carbon)`) + `codex` (`GPT-6-Luna (High / Max)` via ChatGPT subscription) + `grok` (OpenCode xAI subscription or `XAI_API_KEY`) + configured API answers (`glm`/`deepseek`/`minimax`); current-session synthesis |
 | `/auto` | Delegated single-module coding | Isolated `agy` sandbox worker (or native Claude Code CLI / Claude cloud bridge); cross-family review + local `verify --full` & `apply --sha` |
 | `/swarm` | Parallel multi-file orchestration | Automatic prefix-free triage in Antigravity / `agy` (`always_on` rule), OpenCode (`default_agent: swarm`), & Cursor (`alwaysApply` rule + `swarm-coordinator`), splitting work into disjoint sandboxed `agy` slices with cross-family verification and cross-pool quota failover |
 
@@ -120,17 +122,20 @@ models or load paid API keys:
     to OpenCode/Cursor native host or scoped native subagents using healthy `zhipu/glm-5.3`,
     `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or
     `opencode/*-free`, and run `agy_worker.py review --executor auto` (cross-pool `agy`
-    failover -> `--executor api`) or `agy_worker.py review --executor api`.
+    failover -> ChatGPT-authenticated `codex` `gpt-6-luna-high` at `$0` spend -> `grok` /
+    `--executor api`, or explicit `--model codex-max` / `gpt-6-luna-max`).
   - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py`
     `--review` and `aggregate`) plus `agy_worker.py review --executor api` automatically fail
     over across remaining active/keyed providers (`grok` via OpenCode xAI OAuth subscription
     or `XAI_API_KEY` -> `deepseek` -> `glm` -> `minimax`). In the OpenCode
     TUI, switching to another healthy provider or `opencode/glm-5.3-flash-free` continues
     seamlessly.
-- **Active API & retired direct providers**: legacy `openai`, `anthropic`, `gemini`, and `codex`
-  entries were removed from active `config/headless.json` defaults in favor of `agy`,
+- **Active subscription & API providers**: `agy` (Google AI Ultra), `codex` (`GPT-6-Luna (High)`
+  / `gpt-6-luna-high` default plus `codex-max` / `gpt-6-luna-max` via ChatGPT subscription,
+  auto-preferring `/Applications/ChatGPT.app` bundled `codex` over stale `/opt/homebrew/bin/codex`),
   subscription/keyed `grok` (`Grok-4.7` via OpenCode `xai` OAuth or `XAI_API_KEY`), and active
-  prepaid API fallbacks (`deepseek` / `DeepSeek-V4-Pro`, `glm` / `GLM-5.3`, `minimax` / `MiniMax-M3`).
+  prepaid API fallbacks (`deepseek` / `DeepSeek-V4-Pro`, `glm` / `GLM-5.3`, `minimax` /
+  `MiniMax-M3`). Legacy direct `openai`, `anthropic`, and `gemini` API entries remain retired.
 
 For API-backed Q&A, application profiles default to raw collection:
 
@@ -162,7 +167,8 @@ recorded separately. Delegated implementation follows the
 The `agy` executor provides disposable shallow worktrees, a default-deny PreToolUse guard
 (`agy_guard.py`), macOS `sandbox-exec` enforcement (`sandbox.sb`, network disabled), orphan
 process cleanup, cross-family read-only diff review (`review --executor auto` for cross-pool
-`agy` + `--executor api` failover, or `review --executor agy` in `--mode plan` / `--executor api`),
+`agy` + ChatGPT `codex` `gpt-6-luna-high` + `--executor api` failover, or `review --executor agy`
+in `--mode plan` / `--executor codex` with `gpt-6-luna-high` or `gpt-6-luna-max` / `--executor api`),
 and whole-patch gates. Applying requires the reviewed SHA (`--sha`), full sandboxed
 verification (`verify --full`) against the current `HEAD`, clean target files, and protected
 path checks. Control directories including `.git`, `.claude`, `.codex`, `.opencode`,

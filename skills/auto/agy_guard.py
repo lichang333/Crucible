@@ -33,9 +33,9 @@ HOME = os.path.realpath(os.path.expanduser("~"))
 AGY_BUILTIN = os.path.join(HOME, ".gemini", "antigravity-cli", "builtin")
 GEMINI_DIR = os.path.join(HOME, ".gemini")
 
-READ_TOOLS = {"view_file", "list_dir", "grep_search", "find_by_name",
+READ_TOOLS = {"read_file", "view_file", "list_dir", "grep_search", "find_by_name",
               "view_file_outline", "view_code_item", "codebase_search", "command_status"}
-WRITE_TOOLS = {"write_to_file", "replace_file_content", "multi_replace_file_content"}
+WRITE_TOOLS = {"write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content"}
 
 # Directory components and file names that a worker may never write at any depth.
 # Compared case- and normalization-insensitively: APFS is
@@ -127,13 +127,16 @@ def check_write(path, ctx):
 
 
 PATH_KEY_RE = re.compile(r"path|file|dir|cwd|uri", re.I)
+NON_PATH_KEYS = {"CodeContent", "ReplacementContent", "ReplacementChunks",
+                 "Content", "Target", "Replacement", "ArtifactMetadata"}
+LOG_OMIT_KEYS = NON_PATH_KEYS | {"toolAction", "toolSummary"}
 
 
 def path_values(args):
-    """String arguments under path-like keys (TargetFile, AbsolutePath, SearchPath, Cwd, ...)."""
+    """String arguments under path-like keys (TargetFile, AbsolutePath, Path, SearchPath, Cwd, ...)."""
     out = []
     for k, v in (args or {}).items():
-        if not PATH_KEY_RE.search(k) or k in ("CodeContent", "ReplacementContent", "ReplacementChunks"):
+        if not PATH_KEY_RE.search(k) or k in NON_PATH_KEYS:
             continue
         for x in (v if isinstance(v, list) else [v]):
             if isinstance(x, str) and x:
@@ -273,8 +276,14 @@ def decide(payload):
         new = check_command(args, ctx)
         return {"decision": "allow", "overwrite": {"CommandLine": new}}
     if name in WRITE_TOOLS:
+        target = args.get("TargetFile") or args.get("Path")
+        if not isinstance(target, str) or not target:
+            raise Deny(f"{name} without an absolute target path")
+        target_str = target[len("file://"):] if target.startswith("file://") else target
+        if not os.path.isabs(target_str):
+            raise Deny(f"{name} target path must be absolute: {target}")
         paths = path_values(args)
-        if not args.get("TargetFile"):
+        if not paths:
             raise Deny(f"{name} without an absolute target path")
         for p in paths:
             check_write(p, ctx)
@@ -284,7 +293,10 @@ def decide(payload):
             return {"decision": "allow"}
         raise Deny("manage_task may only inspect or stop your own background commands")
     if name in READ_TOOLS:
-        for p in path_values(args):
+        paths = path_values(args)
+        if name in ("read_file", "view_file") and not paths:
+            raise Deny(f"{name} without a target path")
+        for p in paths:
             check_read(p, ctx)
         return {"decision": "allow"}
     raise Deny(f"tool `{name}` is not available to /auto workers (no network, browser, MCP or "
@@ -316,7 +328,7 @@ def main():
         out = {"decision": "deny", "reason": f"/auto guard internal error ({type(e).__name__}); action denied"}
     tc = payload.get("toolCall") or {}
     a = {k: v for k, v in (tc.get("args") or {}).items()
-         if k not in ("CodeContent", "ReplacementContent", "ReplacementChunks", "toolAction", "toolSummary")}
+         if k not in LOG_OMIT_KEYS}
     log({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "run": os.environ.get("AUTO_RUN_ID", ""),
          "conv": payload.get("conversationId"), "tool": tc.get("name"), "args": a,
          "decision": out["decision"], "reason": out.get("reason"),

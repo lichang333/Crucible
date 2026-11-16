@@ -29,10 +29,11 @@ Use `--platform headless` only when API aggregation is wanted; this adds a paid
 aggregator call. A bare invocation of the shared core script retains legacy
 headless behavior.
 
-`--models` accepts comma-separated provider names (default active set: `agy`, `grok`, `glm`, `deepseek`, `minimax`; `opencode` defaults to `agy`, `deepseek`, `minimax`). Prefer a relevant subset when
+`--models` accepts comma-separated provider names (default active set: `agy`, `codex`, `grok`, `glm`, `deepseek`, `minimax`; the `codex` platform omits `codex` to avoid self-voting, and `opencode` defaults to `agy`, `deepseek`, `minimax`). Prefer a relevant subset when
 it suffices; the legacy default remains all configured providers. Keys are local
 to the shared `skills/moa/.env` or the existing environment/Desktop fallback.
 The `agy` provider executes locally in read-only `--mode plan` via `agy` (default model `gemini-pro-orchestrator`, `Orchestrator (Carbon)`) using the user's Google AI Ultra subscription without requiring an API key.
+The `codex` provider executes locally in read-only `codex exec --ephemeral -s read-only` (default model `gpt-6-luna-high`, `GPT-6-Luna (High)`) via `CODEX_BIN`, a newer bundled `ChatGPT.app` CLI on macOS, or `PATH` (`~/.codex/auth.json` or `OPENAI_API_KEY`). Inline effort selectors such as `codex-max` or `gpt-6-luna-max` (plus `low`, `medium`, `high`, `xhigh`) map to `codex` and pass `-m gpt-6-luna -c model_reasoning_effort="<tier>"` for that run.
 Do not print keys or copy them into platform directories.
 
 
@@ -107,7 +108,7 @@ To probe connectivity, authentication, and response latency across configured AP
 
 ```bash
 python3 "$R" --doctor
-python3 "$R" --models grok,deepseek,glm --doctor
+python3 "$R" --models codex-max,grok,deepseek,glm --doctor
 ```
 
 This pings targets concurrently (`max_tokens=128` so reasoning models do not truncate) and displays a summary table reporting type (`API`, `OAuth CLI`, or `Local CLI`), status (`✅ OK`, `⚠️ No Auth`, or `❌ Error`), round-trip latency, and diagnostic details without writing run records.
