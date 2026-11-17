@@ -65,9 +65,10 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(headless["providers"]["codex"], {"model": "gpt-6-luna-high", "display_name": "GPT-6-Luna (High)"})
         self.assertEqual(headless["providers"]["glm"], {"model": "glm-5.3", "display_name": "GLM-5.3"})
         self.assertEqual(headless["providers"]["deepseek"], {"model": "deepseek-v4-pro", "display_name": "DeepSeek-V4-Pro"})
-        self.assertEqual(headless["api_advisors"]["providers"], ["grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(headless["providers"]["deepseek-flash"], {"model": "deepseek-flash", "display_name": "DeepSeek-V4.1-Flash"})
+        self.assertEqual(headless["api_advisors"]["providers"], ["grok", "glm", "deepseek", "deepseek-flash", "minimax"])
         self.assertEqual(headless["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "minimax"])
-        self.assertEqual(headless["aggregation_priority"], ["agy", "codex", "grok", "deepseek", "glm", "minimax"])
+        self.assertEqual(headless["aggregation_priority"], ["agy", "codex", "grok", "deepseek", "deepseek-flash", "glm", "minimax"])
         self.assertEqual(codex["worker_defaults"], ["agy", "grok", "glm", "deepseek", "minimax"])
 
     def test_config_preview_does_not_read_keys_call_models_or_create_records(self):
@@ -1023,6 +1024,90 @@ class RunnerTests(unittest.TestCase):
         )
         self.assertEqual(code, 0, stderr)
         self.assertEqual(recorded_std["codex"], ("installed", "gpt-6-luna-high", 128, 35))
+
+    def test_deepseek_v4_1_flash_and_effort_selectors(self):
+        self.assertEqual(
+            runner.parse_deepseek_model_spec("deepseek-v4.1"),
+            ("deepseek-flash", "deepseek-flash", None, "deepseek-flash", "DeepSeek-V4.1-Flash"),
+        )
+        self.assertEqual(
+            runner.parse_deepseek_model_spec("deepseek-flash"),
+            ("deepseek-flash", "deepseek-flash", None, "deepseek-flash", "DeepSeek-V4.1-Flash"),
+        )
+        self.assertEqual(
+            runner.parse_deepseek_model_spec("deepseek-v4.1-max"),
+            ("deepseek-flash", "deepseek-flash", "max", "deepseek-flash-max", "DeepSeek-V4.1-Flash (Max)"),
+        )
+        self.assertEqual(
+            runner.parse_deepseek_model_spec("deepseek-max"),
+            ("deepseek", "deepseek-v4-pro", "max", "deepseek-v4-pro-max", "DeepSeek-V4-Pro (Max)"),
+        )
+        self.assertEqual(
+            runner.parse_deepseek_model_spec("deepseek-v4-pro"),
+            ("deepseek", "deepseek-v4-pro", None, "deepseek-v4-pro", "DeepSeek-V4-Pro"),
+        )
+
+        code, stdout, stderr, call = self.invoke(["--models", "deepseek-v4.1", "--show-config"])
+        self.assertEqual(code, 0, stderr)
+        cfg = json.loads(stdout)
+        self.assertEqual(
+            cfg["selected_workers"],
+            [{"provider": "deepseek-flash", "model": "deepseek-flash", "display_name": "DeepSeek-V4.1-Flash"}],
+        )
+        call.assert_not_called()
+
+        code, stdout, stderr, call = self.invoke(["--models", "deepseek,deepseek-v4.1", "--show-config"])
+        self.assertEqual(code, 0, stderr)
+        cfg_both = json.loads(stdout)
+        self.assertEqual(
+            cfg_both["selected_workers"],
+            [
+                {"provider": "deepseek", "model": "deepseek-v4-pro", "display_name": "DeepSeek-V4-Pro"},
+                {"provider": "deepseek-flash", "model": "deepseek-flash", "display_name": "DeepSeek-V4.1-Flash"},
+            ],
+        )
+        call.assert_not_called()
+
+        seen_payloads = []
+
+        class _FakeHTTPResp:
+            def __init__(self, content_str):
+                self._raw = json.dumps({"choices": [{"message": {"content": content_str}}]}).encode("utf-8")
+
+            def read(self):
+                return self._raw
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            seen_payloads.append(json.loads(req.data.decode("utf-8")))
+            return _FakeHTTPResp("PONG")
+
+        with patch.object(runner.urllib.request, "urlopen", side_effect=fake_urlopen):
+            res_max = runner.call_model("deepseek", "Ping", "ds-key", "deepseek-v4-pro-max")
+            res_flash = runner.call_model("deepseek-flash", "Ping", "ds-key", "deepseek-flash")
+        self.assertEqual(res_max, "PONG")
+        self.assertEqual(res_flash, "PONG")
+        self.assertEqual(seen_payloads[0]["model"], "deepseek-v4-pro")
+        self.assertEqual(seen_payloads[0]["reasoning_effort"], "max")
+        self.assertEqual(seen_payloads[1]["model"], "deepseek-flash")
+        self.assertNotIn("reasoning_effort", seen_payloads[1])
+
+        os.environ["DEEPSEEK_API_KEY"] = "synthetic-ds-key"
+        recorded_doc = {}
+        code, stdout, stderr, _ = self.invoke(
+            ["--models", "deepseek-max,deepseek-v4.1", "--doctor"],
+            side_effect=lambda p, pr, k, m, system_prompt=None, max_tokens=None, timeout=None: (
+                recorded_doc.setdefault(p, (k, m, max_tokens, timeout)) and "PONG"
+            ),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(recorded_doc["deepseek"], ("synthetic-ds-key", "deepseek-v4-pro-max", 128, 60))
+        self.assertEqual(recorded_doc["deepseek-flash"], ("synthetic-ds-key", "deepseek-flash", 128, 20))
 
 
 if __name__ == "__main__":

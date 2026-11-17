@@ -579,9 +579,14 @@ worker.main()
         "xai/grok-4.7": ("grok", "grok-4.7"),
         "grok-4.7": ("grok", "grok-4.7"),
         "deepseek": ("deepseek", None),
+        "deepseek-flash": ("deepseek-flash", None),
+        "deepseek-v4.1": ("deepseek-flash", "deepseek-v4.1"),
+        "deepseek-v4.1-max": ("deepseek-flash", "deepseek-v4.1-max"),
+        "deepseek-max": ("deepseek", "deepseek-max"),
         "GLM": ("glm", None),
         "zhipu/glm-5.3": ("glm", "glm-5.3"),
         "deepseek/deepseek-v4-pro": ("deepseek", "deepseek-v4-pro"),
+        "deepseek/deepseek-v4.1": ("deepseek-flash", "deepseek-v4.1"),
         "GLM-5.3-Flash": ("glm", "GLM-5.3-Flash"),
         "minimax/MiniMax-M3": ("minimax", "MiniMax-M3"),
         "MiniMax-M3": ("minimax", "MiniMax-M3"),
@@ -614,11 +619,16 @@ worker.main()
             "    return {'providers': {\n"
             "        'grok': {'model': 'grok-4.7', 'display_name': 'Grok-4.7'},\n"
             "        'deepseek': {'model': 'deepseek-chat', 'display_name': 'DeepSeek-V4-Pro'},\n"
+            "        'deepseek-flash': {'model': 'deepseek-flash', 'display_name': 'DeepSeek-V4.1-Flash'},\n"
             "        'glm': {'model': 'glm-5.3-flash', 'display_name': 'GLM-5.3-Flash'},\n"
             "        'minimax': {'model': 'MiniMax-M3', 'display_name': 'MiniMax-M3'},\n"
             "    }}\n"
+            "def resolve_model_token(token, providers_cfg):\n"
+            "    if token.lower() in ('deepseek-v4.1', 'deepseek-flash'):\n"
+            "        return 'deepseek-flash', {'model': 'deepseek-flash', 'display_name': 'DeepSeek-V4.1-Flash'}\n"
+            "    return 'deepseek', {'model': token, 'display_name': token}\n"
             "def provider_key(prov):\n"
-            "    return os.environ.get(f'MOCK_{prov.upper()}_KEY')\n"
+            "    return os.environ.get(f\"MOCK_{prov.upper().replace('-', '_')}_KEY\")\n"
             "def run_worker(prov, settings, prompt, api_key, system_prompt=None, max_tokens=None, attempts=2):\n"
             "    beh = json.loads(os.environ.get('MOCK_API_BEHAVIOR', '{}'))\n"
             "    item = beh.get(prov, {'status': 'failed', 'error': 'unconfigured mock'})\n"
@@ -654,6 +664,22 @@ worker.main()
           and api_saved.get("patch_sha256") == expected_patch_sha
           and "Acceptable (api-deepseek)" in api_saved.get("review", ""),
           r_api_ok.stderr + r_api_ok.stdout)
+
+    if os.path.exists(api_review_path):
+        os.unlink(api_review_path)
+    env_ds_flash = dict(base_api_env,
+                        MOCK_DEEPSEEK_FLASH_KEY="k-ds-flash",
+                        MOCK_API_BEHAVIOR=json.dumps({
+                            "deepseek-flash": {"status": "success", "response": "Review Verdict: Acceptable (ds-v4.1-flash)"}
+                        }))
+    r_ds_flash = sh(*W, "review", rid, "--executor", "api", "--model", "deepseek-v4.1", "--json", check=False, env=env_ds_flash)
+    ds_flash_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    check("review --executor api --model deepseek-v4.1 routes cleanly to deepseek-flash",
+          r_ds_flash.returncode == 0
+          and ds_flash_saved.get("provider") == "deepseek-flash"
+          and ds_flash_saved.get("model") == "deepseek-flash"
+          and "Acceptable (ds-v4.1-flash)" in ds_flash_saved.get("review", ""),
+          r_ds_flash.stderr + r_ds_flash.stdout)
 
     env_api_failover = dict(base_api_env,
                             MOCK_DEEPSEEK_KEY="k-ds",

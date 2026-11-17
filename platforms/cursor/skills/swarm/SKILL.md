@@ -27,7 +27,7 @@ Your primary optimization goal is **high engineering quality while conserving Cu
      - **3-tier automatic quota / unsubscribed failover**:
        - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
        - **Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted)**: automatically downgrade to the Cursor native host or scoped native subagents using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, plus `agy_worker.py review --executor auto` (which fails over at `$0` API spend to ChatGPT-authenticated **`codex`** `gpt-6-luna-high`, auto-preferring newer `/Applications/ChatGPT.app` bundled `codex`, and OpenCode **`grok`**, before `--executor api`; pass `--model codex-max` / `gpt-6-luna-max` for max-effort Codex review).
-       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `glm` -> `minimax`).
+       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `minimax`; supports `deepseek-v4.1` / `deepseek-max`).
 
    | Family | Tier | Canonical Model IDs (19 total; `gemini-3.8` retired) |
    |---|---|---|

@@ -32,6 +32,7 @@ KEY_NAMES = {
     "anthropic": ("ANTHROPIC_API_KEY",),
     "glm": ("ZHIPUAI_API_KEY", "ZHIPU_API_KEY"),
     "deepseek": ("DEEPSEEK_API_KEY",),
+    "deepseek-flash": ("DEEPSEEK_API_KEY",),
     "minimax": ("MINIMAX_API_KEY",),
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "codex": ("CODEX_CLI", "CODEX_AUTH"),
@@ -41,6 +42,7 @@ CHATGPT_APP_CODEX_CANDIDATES = (
     "~/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
 )
 CODEX_EFFORT_TIERS = ("low", "medium", "high", "xhigh", "max")
+DEEPSEEK_EFFORT_TIERS = ("low", "high", "max")
 
 ENDPOINTS = {
     "grok": "https://api.x.ai/v1/chat/completions",
@@ -48,6 +50,7 @@ ENDPOINTS = {
     "anthropic": "https://api.anthropic.com/v1/messages",
     "glm": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
     "deepseek": "https://api.deepseek.com/chat/completions",
+    "deepseek-flash": "https://api.deepseek.com/chat/completions",
     "minimax": "https://api.minimax.io/v1/chat/completions",
 }
 
@@ -178,6 +181,39 @@ def parse_codex_model_spec(spec):
     return (raw, None)
 
 
+def parse_deepseek_model_spec(spec):
+    raw = (spec or "").strip() if isinstance(spec, str) else ""
+    if not raw:
+        return ("deepseek", "deepseek-v4-pro", None, "deepseek-v4-pro", "DeepSeek-V4-Pro")
+    stripped = raw
+    if "/" in stripped:
+        prefix, rest = stripped.split("/", 1)
+        if prefix.strip().lower() in ("deepseek", "deepseek-flash"):
+            stripped = rest.strip()
+    tiers = "|".join(DEEPSEEK_EFFORT_TIERS)
+    flash_match = re.match(
+        rf"^(?:deepseek[- ]?(?:v?4[.\-_]?1(?:[- ]?flash)?|flash))(?:[-:(\s]+({tiers})\)?)?$",
+        stripped,
+        re.IGNORECASE,
+    )
+    if flash_match:
+        tier = flash_match.group(1).lower() if flash_match.group(1) else None
+        canonical = f"deepseek-flash-{tier}" if tier else "deepseek-flash"
+        display = f"DeepSeek-V4.1-Flash ({tier.capitalize()})" if tier else "DeepSeek-V4.1-Flash"
+        return ("deepseek-flash", "deepseek-flash", tier, canonical, display)
+    pro_match = re.match(
+        rf"^(?:deepseek(?:[- ]?(?:v?4[- ]?)?pro)?)(?:[-:(\s]+({tiers})\)?)?$",
+        stripped,
+        re.IGNORECASE,
+    )
+    if pro_match:
+        tier = pro_match.group(1).lower() if pro_match.group(1) else None
+        canonical = f"deepseek-v4-pro-{tier}" if tier else "deepseek-v4-pro"
+        display = f"DeepSeek-V4-Pro ({tier.capitalize()})" if tier else "DeepSeek-V4-Pro"
+        return ("deepseek", "deepseek-v4-pro", tier, canonical, display)
+    return (None, stripped, None, stripped, stripped)
+
+
 def resolve_model_token(token, providers_cfg):
     clean = token.strip() if isinstance(token, str) else ""
     if clean in providers_cfg and clean in KEY_NAMES:
@@ -196,6 +232,14 @@ def resolve_model_token(token, providers_cfg):
             else:
                 settings["display_name"] = "GPT-6-Luna"
             return "codex", settings
+    ds_prov, _, _, ds_canonical, ds_display = parse_deepseek_model_spec(clean)
+    if ds_prov and ds_prov in providers_cfg:
+        return ds_prov, {"model": ds_canonical, "display_name": ds_display}
+    if "/" in clean:
+        prefix, custom_model = clean.split("/", 1)
+        custom_model = custom_model.strip()
+        if prefix.strip().lower() == "deepseek" and custom_model and "deepseek" in providers_cfg:
+            return "deepseek", {"model": custom_model, "display_name": custom_model}
     raise ValueError(f"Unknown external API provider: {clean}; native agents are managed by the session")
 
 
@@ -445,12 +489,18 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
         headers["Authorization"] = f"Bearer {api_key}"
         if provider == "grok" and isinstance(model, str) and model.startswith("xai/"):
             model = model.split("/", 1)[1]
+        effort = None
+        if provider in ("deepseek", "deepseek-flash"):
+            default_ds = "deepseek-flash" if provider == "deepseek-flash" else "deepseek-v4-pro"
+            _, model, effort, _, _ = parse_deepseek_model_spec(model or default_ds)
         messages = [{"role": "user", "content": prompt}]
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
         data = {"model": model, "messages": messages}
         if max_tokens:
             data["max_tokens"] = max_tokens
+        if effort:
+            data["reasoning_effort"] = effort
 
     http_timeout = 90 if timeout is None else timeout
     request = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers, method="POST")
@@ -563,7 +613,7 @@ def parser():
                         help="Defaults to the platform entrypoint, or headless for the shared script")
     result.add_argument("--coordinator-model", default="current", help="Session model metadata; never an API provider")
     result.add_argument("--task-id")
-    result.add_argument("--models", help="Comma-separated external providers, e.g. agy,codex,codex-max,grok,deepseek,minimax")
+    result.add_argument("--models", help="Comma-separated external providers, e.g. agy,codex,codex-max,grok,deepseek,deepseek-v4.1,deepseek-max,minimax")
     result.add_argument("--raw", action="store_true", help="Return worker JSON without an API aggregator")
     result.add_argument("--review", "--glm52", dest="review", action="store_true")
     result.add_argument("--cross-review", "--evidence-review", dest="cross_review", action="store_true",
@@ -615,7 +665,7 @@ def main(argv=None):
         targets = [p for p in selected if p in config["providers"]] if args.models is not None else list(config["providers"].keys())
         providers = {p: config["providers"][p] for p in targets}
         print(f"MoA Provider Health & Latency Check ({args.platform} profile)")
-        print("-" * 82)
+        print("-" * 85)
 
         def probe_provider(name):
             settings = providers[name]
@@ -636,6 +686,8 @@ def main(argv=None):
                 }
             if name == "codex" and parse_codex_model_spec(settings["model"])[1] in ("max", "xhigh"):
                 probe_timeout = 120
+            elif name in ("deepseek", "deepseek-flash") and parse_deepseek_model_spec(settings["model"])[2] == "max":
+                probe_timeout = 60
             else:
                 probe_timeout = 35 if ptype != "API" else 20
             t0 = time.monotonic()
@@ -677,11 +729,11 @@ def main(argv=None):
         with ThreadPoolExecutor(max_workers=max(1, len(targets))) as executor:
             results = list(executor.map(probe_provider, targets))
 
-        print(f"{'Provider':<12} {'Model':<26} {'Type':<11} {'Status':<11} {'Latency':<10} {'Details'}")
-        print("-" * 82)
+        print(f"{'Provider':<15} {'Model':<26} {'Type':<11} {'Status':<11} {'Latency':<10} {'Details'}")
+        print("-" * 85)
         for r in results:
-            print(f"{r['provider']:<12} {r['model']:<26} {r['type']:<11} {r['status']:<11} {r['latency']:<10} {r['details']}")
-        print("-" * 82)
+            print(f"{r['provider']:<15} {r['model']:<26} {r['type']:<11} {r['status']:<11} {r['latency']:<10} {r['details']}")
+        print("-" * 85)
         ok_count = sum(1 for r in results if "✅" in r["status"])
         print(f"Summary: {ok_count}/{len(results)} providers healthy.")
         return 0 if ok_count > 0 else 1

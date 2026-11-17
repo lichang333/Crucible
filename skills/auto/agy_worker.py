@@ -1161,7 +1161,7 @@ def cmd_record(a):
     print(json.dumps(entry, ensure_ascii=False))
 
 
-API_PROVIDERS = ("grok", "deepseek", "glm", "minimax")
+API_PROVIDERS = ("grok", "deepseek", "deepseek-flash", "glm", "minimax")
 
 
 def _load_moa_runner():
@@ -1184,15 +1184,24 @@ def _infer_api_target(model_arg):
         return None, None
     raw = model_arg.strip()
     lower = raw.lower()
-    if lower in ("grok", "xai", "deepseek", "glm", "zhipu", "minimax"):
+    if lower in ("grok", "xai", "deepseek", "deepseek-flash", "glm", "zhipu", "minimax"):
         prov = "grok" if lower == "xai" else ("glm" if lower == "zhipu" else lower)
         return prov, None
+    if lower in ("deepseek-v4.1", "deepseek-v4-1", "deepseek-v4.1-flash", "deepseek-v4-1-flash") or lower.startswith(
+        ("deepseek-flash-", "deepseek-v4.1-", "deepseek-v4-1-", "deepseek-flash ", "deepseek-v4.1 ", "deepseek v4.1")
+    ):
+        return "deepseek-flash", raw
     if "/" in raw:
         prov_part, model_part = raw.split("/", 1)
         prov_low = prov_part.strip().lower()
-        if prov_low in ("grok", "xai", "deepseek", "glm", "zhipu", "minimax"):
+        if prov_low in ("grok", "xai", "deepseek", "deepseek-flash", "glm", "zhipu", "minimax"):
             prov = "grok" if prov_low == "xai" else ("glm" if prov_low == "zhipu" else prov_low)
-            return prov, (model_part.strip() or None)
+            model_val = model_part.strip() or None
+            if prov == "deepseek" and model_val:
+                mlow = model_val.lower()
+                if mlow in ("deepseek-v4.1", "deepseek-v4-1", "deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-1-flash") or mlow.startswith(("deepseek-flash-", "deepseek-v4.1-", "deepseek-v4-1-")):
+                    return "deepseek-flash", model_val
+            return prov, model_val
         return None, None
     for prefix, prov in (("grok-", "grok"), ("deepseek-", "deepseek"), ("glm-", "glm"), ("minimax-", "minimax")):
         if lower.startswith(prefix):
@@ -1233,7 +1242,16 @@ def _run_api_review(review_prompt, requested_model, prior_fallbacks=None):
     for prov, key in keyed:
         settings = dict(providers_cfg[prov])
         if prov == req_prov and req_explicit_model:
-            settings["model"] = req_explicit_model
+            if prov in ("deepseek", "deepseek-flash") and hasattr(runner, "resolve_model_token"):
+                try:
+                    resolved_prov, resolved_settings = runner.resolve_model_token(req_explicit_model, providers_cfg)
+                    if resolved_prov in providers_cfg:
+                        settings = dict(resolved_settings)
+                        prov = resolved_prov
+                except ValueError:
+                    settings["model"] = req_explicit_model
+            else:
+                settings["model"] = req_explicit_model
         res = runner.run_worker(
             prov,
             settings,

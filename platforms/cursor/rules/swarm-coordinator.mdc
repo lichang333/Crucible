@@ -23,6 +23,6 @@ Triage every incoming prompt automatically (no `/swarm` prefix needed unless req
    - **3-tier automatic failover**:
      - Tier 1 (`agy` dual pools): on `429` or `quota_exhausted`, preserve partial patches and fail over between Gemini 4 / Orchestrator and Claude 5.5 / `gpt-oss-120b-medium`.
      - Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted): downgrade to Cursor native host or scoped subagents (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`) plus `agy_worker.py review --executor auto` / `--executor api`.
-     - Tier 3 (prepaid API balance exhausted or key expired): `moa_runner.py` (`--review` / `aggregate`) and `agy_worker.py review --executor api` fail over across remaining keyed providers (`deepseek` -> `glm` -> `minimax`).
+     - Tier 3 (prepaid API balance exhausted or key expired): `moa_runner.py` (`--review` / `aggregate`) and `agy_worker.py review --executor api` fail over across remaining keyed providers (`deepseek` -> `deepseek-flash` -> `glm` -> `minimax`; `deepseek-v4.1` & `deepseek-max` selectable).
 5. **Mandatory Verification Before Apply**:
    - Inspect `diff.patch` & `REVIEW_FLAGS` (`.cursor`, `.opencode`, `.git` protected), run `review --executor auto` (or `--executor agy` / `--executor api`), `verify --full -- <test-cmd>`, `apply --sha`, and include **模型调用说明**.
