@@ -29,7 +29,7 @@ def main():
                     "gemini": user_home / ".gemini/config/skills",
                     "opencode": user_home / ".config/opencode/skills",
                     "cursor": user_home / ".cursor/skills"}
-    platform_skills = {"codex": ("moa", "auto"),
+    platform_skills = {"codex": ("moa", "auto", "swarm"),
                        "claude": ("moa", "auto"),
                        "gemini": ("moa", "auto", "swarm"),
                        "opencode": ("moa", "auto", "swarm"),
