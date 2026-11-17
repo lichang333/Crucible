@@ -42,7 +42,7 @@ shared profile. **`GPT-6-Luna (High / Max)`** (`codex` / `gpt-6-luna-high` defau
 `codex-max` / `gpt-6-luna-max` at `$0` API cost via ChatGPT-authenticated `codex`,
 auto-discovering newer `/Applications/ChatGPT.app` bundled `codex` over stale Homebrew
 installs), **`Grok-4.7`** (via local signed-in OpenCode xAI subscription at `$0` API cost,
-or `XAI_API_KEY`), **`GLM-5.3`**, **`DeepSeek-V4-Pro`**, and **`MiniMax-M3`** are supported
+or `XAI_API_KEY`), **`GLM-5.3`**, **`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`** (`deepseek` / `deepseek-v4.1` / `deepseek-max`), and **`MiniMax-M3`** are supported
 advisors and cross-family patch reviewers through `moa_runner.py` and
 `python3 "$W" review '<run-id>' --executor auto` (or `--model gpt-6-luna-high` /
 `--model codex-max` / `--model grok` / `--executor api`, auto-failing over across `agy`

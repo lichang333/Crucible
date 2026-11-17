@@ -7,7 +7,8 @@ ChatGPT-authenticated **`codex`** (`GPT-6-Luna (High)` / `gpt-6-luna-high` defau
 `codex-max` / `gpt-6-luna-max` at zero API cost, auto-preferring newer
 `/Applications/ChatGPT.app` bundled `codex` over stale Homebrew binaries), bridged
 **`grok`** (`Grok-4.7` via signed-in OpenCode xAI OAuth subscription at zero API cost or
-`XAI_API_KEY`), optional prepaid APIs `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`),
+`XAI_API_KEY`), optional prepaid APIs `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`,
+plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort),
 and `minimax` (`MiniMax-M3`), and optional Claude Code subscription bridges) provide
 parallel Q&A analysis, isolated coding slices, and cross-family cold-eyes verification.
 
@@ -135,8 +136,8 @@ models or load paid API keys:
   / `gpt-6-luna-high` default plus `codex-max` / `gpt-6-luna-max` via ChatGPT subscription,
   auto-preferring `/Applications/ChatGPT.app` bundled `codex` over stale `/opt/homebrew/bin/codex`),
   subscription/keyed `grok` (`Grok-4.7` via OpenCode `xai` OAuth or `XAI_API_KEY`), and active
-  prepaid API fallbacks (`deepseek` / `DeepSeek-V4-Pro`, `glm` / `GLM-5.3`, `minimax` /
-  `MiniMax-M3`). Legacy direct `openai`, `anthropic`, and `gemini` API entries remain retired.
+  prepaid API fallbacks (`deepseek` / `DeepSeek-V4-Pro`, `deepseek-v4.1` / `DeepSeek-V4.1-Flash`
+  + `deepseek-max`, `glm` / `GLM-5.3`, `minimax` / `MiniMax-M3`). Legacy direct `openai`, `anthropic`, and `gemini` API entries remain retired.
 
 For API-backed Q&A, application profiles default to raw collection:
 

@@ -11,7 +11,7 @@ The current Cursor session is the coordinator and final synthesizer. Read [the s
 - **Host (Cursor)**: Anchor vote with live codebase tools and web search, plus final synthesis (avoids extra host agent loops or a paid API aggregator call).
 - **Default Workers (from `routing.json`)**:
   - `agy` (`Orchestrator (Carbon)` / `gemini-pro-orchestrator`): runs read-only via local `agy --mode plan` on your **Google AI Ultra subscription (\$0 marginal API cost)**.
-  - `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`), & `minimax` (`MiniMax-M3`): independent non-Google model families via prepaid APIs when multi-family API diversity is needed.
+  - `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`, plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort), & `minimax` (`MiniMax-M3`): independent non-Google model families via prepaid APIs when multi-family API diversity is needed.
 - **Zero-API-cost single consult**: pass `--models agy` when you only want a second opinion from `Orchestrator (Carbon)` without spending prepaid API tokens.
 - **3-Tier Automatic Failover**:
   - **Tier 1 (`agy` dual pools)** & **Tier 2 (`agy` unsubscribed/uninstalled/exhausted)**: `agy_worker.py review --executor auto` fails over across Gemini 4 / Orchestrator and Claude 5.5 / `gpt-oss-120b-medium`, then falls back to `--executor api` (`deepseek` -> `glm` -> `minimax`); coding downgrades to the Cursor native host or scoped subagents (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`).
