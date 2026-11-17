@@ -456,13 +456,14 @@ worker.main()
     # 14. Active agy catalog (`models`), profile loading via symlink, and model alias resolution.
     r = sh(*W, "models", "--json", check=False)
     cat = json.loads(r.stdout) if r.returncode == 0 else {}
-    check("models --json returns 8 families and 19 models with zero gemini-3.8 entries",
+    check("models --json returns 8 families and 19 models with filler route and zero gemini-3.8 entries",
           r.returncode == 0
           and len(cat.get("families", [])) == 8
           and len(cat.get("models", [])) == 19
           and "gemini-3.8" not in r.stdout
           and "live_models" not in cat
-          and set(cat.get("agy_alternatives", {})) >= {"l1", "l2", "l3", "review"}
+          and set(cat.get("agy_alternatives", {})) >= {"filler", "l1", "l2", "l3", "review"}
+          and cat.get("agy_routes", {}).get("filler") == "gemini-4-argon-low"
           and cat.get("agy_routes", {}).get("l1") == "gemini-4-carbon-high"
           and bool(cat.get("fallback_routes")),
           r.stderr + r.stdout[:300])
@@ -588,6 +589,10 @@ worker.main()
         "deepseek/deepseek-v4-pro": ("deepseek", "deepseek-v4-pro"),
         "deepseek/deepseek-v4.1": ("deepseek-flash", "deepseek-v4.1"),
         "GLM-5.3-Flash": ("glm", "GLM-5.3-Flash"),
+        "kimi": ("kimi", None),
+        "moonshot": ("kimi", None),
+        "kimi-highspeed": ("kimi", "kimi-highspeed"),
+        "moonshot/kimi-k3.1-pro": ("kimi", "kimi-k3.1-pro"),
         "minimax/MiniMax-M3": ("minimax", "MiniMax-M3"),
         "MiniMax-M3": ("minimax", "MiniMax-M3"),
         "Claude Opus 5.5": (None, None),
@@ -596,8 +601,13 @@ worker.main()
     }
     bad_infer = {k: (v, worker_mod._infer_api_target(k))
                  for k, v in infer_cases.items() if worker_mod._infer_api_target(k) != v}
-    check("_infer_api_target normalizes providers, zhipu->glm, and model prefixes",
+    check("_infer_api_target normalizes providers, zhipu->glm, moonshot->kimi, and model prefixes",
           not bad_infer, json.dumps(bad_infer))
+
+    rec_help = sh(*W, "record", "--help", check=False)
+    check("record --help supports filler alongside L1/L2/L3",
+          rec_help.returncode == 0 and "filler" in rec_help.stdout,
+          rec_help.stderr + rec_help.stdout)
 
     swarm_entry = os.path.join(SOURCE_DIR, "..", "..", "platforms", "opencode", "skills", "swarm", "agy_worker.py")
     sym_spec = importlib.util.spec_from_file_location("agy_worker_sym", swarm_entry)
@@ -621,11 +631,16 @@ worker.main()
             "        'deepseek': {'model': 'deepseek-chat', 'display_name': 'DeepSeek-V4-Pro'},\n"
             "        'deepseek-flash': {'model': 'deepseek-flash', 'display_name': 'DeepSeek-V4.1-Flash'},\n"
             "        'glm': {'model': 'glm-5.3-flash', 'display_name': 'GLM-5.3-Flash'},\n"
+            "        'kimi': {'model': 'kimi-k3.1-pro', 'display_name': 'Kimi-K3.1-Pro'},\n"
             "        'minimax': {'model': 'MiniMax-M3', 'display_name': 'MiniMax-M3'},\n"
             "    }}\n"
             "def resolve_model_token(token, providers_cfg):\n"
-            "    if token.lower() in ('deepseek-v4.1', 'deepseek-flash'):\n"
+            "    low = token.lower()\n"
+            "    if low in ('deepseek-v4.1', 'deepseek-flash'):\n"
             "        return 'deepseek-flash', {'model': 'deepseek-flash', 'display_name': 'DeepSeek-V4.1-Flash'}\n"
+            "    if 'kimi' in low or 'moonshot' in low:\n"
+            "        m = 'kimi-k3.1-pro-highspeed' if 'highspeed' in low else 'kimi-k3.1-pro'\n"
+            "        return 'kimi', {'model': m, 'display_name': m}\n"
             "    return 'deepseek', {'model': token, 'display_name': token}\n"
             "def provider_key(prov):\n"
             "    return os.environ.get(f\"MOCK_{prov.upper().replace('-', '_')}_KEY\")\n"
@@ -680,6 +695,22 @@ worker.main()
           and ds_flash_saved.get("model") == "deepseek-flash"
           and "Acceptable (ds-v4.1-flash)" in ds_flash_saved.get("review", ""),
           r_ds_flash.stderr + r_ds_flash.stdout)
+
+    if os.path.exists(api_review_path):
+        os.unlink(api_review_path)
+    env_kimi_hs = dict(base_api_env,
+                       MOCK_KIMI_KEY="k-kimi",
+                       MOCK_API_BEHAVIOR=json.dumps({
+                           "kimi": {"status": "success", "response": "Review Verdict: Acceptable (kimi-highspeed)"}
+                       }))
+    r_kimi_hs = sh(*W, "review", rid, "--executor", "api", "--model", "kimi-highspeed", "--json", check=False, env=env_kimi_hs)
+    kimi_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
+    check("review --executor api --model kimi-highspeed routes cleanly to kimi",
+          r_kimi_hs.returncode == 0
+          and kimi_saved.get("provider") == "kimi"
+          and kimi_saved.get("model") == "kimi-k3.1-pro-highspeed"
+          and "Acceptable (kimi-highspeed)" in kimi_saved.get("review", ""),
+          r_kimi_hs.stderr + r_kimi_hs.stdout)
 
     env_api_failover = dict(base_api_env,
                             MOCK_DEEPSEEK_KEY="k-ds",

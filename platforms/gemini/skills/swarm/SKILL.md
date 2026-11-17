@@ -23,14 +23,15 @@ Keep the current Antigravity coordinator turn lean as planner/integrator, and di
    - Native Antigravity subagents do not inherit `agy_guard.py` or standalone `$TMPDIR` git isolation; use `agy_worker.py` for delegated coding slices inside git repos.
    - Split multi-file work into **2–4 disjoint slices** (`OWNED FILES` must not overlap) and launch concurrent `agy_worker.py run --platform gemini` processes in one turn.
    - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.gemini/config/skills/swarm/agy_worker.py" models`):
-     - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium` (`gemini-4-argon-low` for quick checks)
+     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — reserve `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+     - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium`
      - Standard L1/L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
      - Deep algorithmic / multi-file synthesis: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
      - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
      - **3-tier automatic quota / unsubscribed failover**:
        - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
-       - **Tier 2 (`agy` pools exhausted)**: automatically fail over `agy_worker.py review --executor auto` to bridged **`grok`** (`Grok-4.7` via signed-in OpenCode xAI subscription at `$0` API spend) or keyed APIs (`deepseek` / `glm` / `minimax`), and route coding to native Claude Code subscription (`claude_local.py`) or host L0/scoped edits if needed.
-       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining healthy providers (`grok` -> `deepseek` -> `glm` -> `minimax`).
+       - **Tier 2 (`agy` pools exhausted)**: automatically fail over `agy_worker.py review --executor auto` to bridged **`grok`** (`Grok-4.7` via signed-in OpenCode xAI subscription at `$0` API spend) or keyed APIs (`deepseek` / `deepseek-flash` / `glm` / `kimi` / `minimax`), and route coding to native Claude Code subscription (`claude_local.py`) or host L0/scoped edits if needed.
+       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining healthy providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`; supports `kimi-highspeed` / `kimi-max` / `deepseek-v4.1` / `deepseek-max`).
 
    | Family | Tier | Canonical Model IDs (19 total; `gemini-3.8` retired) |
    |---|---|---|

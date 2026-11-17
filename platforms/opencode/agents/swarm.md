@@ -30,7 +30,8 @@ Unless the user explicitly requests a specific model, **you decide and pass `--m
 
 | Task / Slice Profile | Coordinator Auto-Selected Model |
 |---|---|
-| Fast / mechanical L1 edits or lightweight checks | `gemini-4-argon-high` or `gemini-4-carbon-medium` (`gemini-4-argon-low` for quick lookups) |
+| Filler (mock data, comments, copy, boilerplate) | `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review |
+| Fast / mechanical L1 edits or lightweight checks | `gemini-4-argon-high` or `gemini-4-carbon-medium` |
 | Standard L1 / L2 feature or bugfix slice | `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`) |
 | Deep algorithmic / cross-file synthesis slice | `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high` |
 | L3 architecture, invariant design, or tricky root-cause debugging | `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon` |
@@ -38,8 +39,8 @@ Unless the user explicitly requests a specific model, **you decide and pass `--m
 
 ### 3-Tier Automatic Quota & Unsubscribed Failover (`429` / Exhaustion / Expired Keys)
 - **Tier 1 (`agy` dual quota pools)**: Google AI Ultra separates quotas across **Gemini 4 / Orchestrator** vs. **Claude 5.5 / GPT-OSS 120B**. On `quota_exhausted` or persistent `429`, **preserve partial `diff.patch`** and automatically reassign remaining coding or `resume` / `review` work to the other pool (including `gpt-oss-120b-medium`) without asking the user to pick models.
-- **Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted)**: automatically downgrade to the OpenCode native host or scoped `subagent(agent="general")` / `explore` using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, and run `agy_worker.py review --executor auto` (auto-falls back across `agy` pools then `--executor api`) or `--executor api`.
-- **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py`) `--review` & `aggregate` and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`deepseek` -> `glm` -> `minimax`). In the OpenCode TUI, switch to another healthy configured provider or `opencode/glm-5.3-flash-free` to continue seamlessly.
+- **Tier 2 (`agy` pools exhausted)**: automatically downgrade to the OpenCode native host or scoped `subagent(agent="general")` / `explore` using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, and run `agy_worker.py review --executor auto` (auto-falls back across `agy` pools -> ChatGPT `codex` -> `grok` / `--executor api`) or `--executor api`.
+- **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py`) `--review` & `aggregate` and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`). In the OpenCode TUI, switch to another healthy configured provider or `opencode/glm-5.3-flash-free` to continue seamlessly.
 
 ### Full Active `agy` Model Catalog (8 Families / 19 Variants; `gemini-3.8` Excluded)
 `agy_worker.py` accepts canonical IDs and UI display names / shorthands (e.g., `"Claude Opus 5.5"`, `"Gemini 4 Hydrogen (XHigh)"`, `"Orchestrator (Argon)"`):

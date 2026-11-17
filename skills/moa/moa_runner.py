@@ -33,6 +33,7 @@ KEY_NAMES = {
     "glm": ("ZHIPUAI_API_KEY", "ZHIPU_API_KEY"),
     "deepseek": ("DEEPSEEK_API_KEY",),
     "deepseek-flash": ("DEEPSEEK_API_KEY",),
+    "kimi": ("MOONSHOT_API_KEY", "KIMI_API_KEY"),
     "minimax": ("MINIMAX_API_KEY",),
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "codex": ("CODEX_CLI", "CODEX_AUTH"),
@@ -43,6 +44,7 @@ CHATGPT_APP_CODEX_CANDIDATES = (
 )
 CODEX_EFFORT_TIERS = ("low", "medium", "high", "xhigh", "max")
 DEEPSEEK_EFFORT_TIERS = ("low", "high", "max")
+KIMI_EFFORT_TIERS = ("low", "high", "max")
 
 ENDPOINTS = {
     "grok": "https://api.x.ai/v1/chat/completions",
@@ -51,6 +53,7 @@ ENDPOINTS = {
     "glm": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
     "deepseek": "https://api.deepseek.com/chat/completions",
     "deepseek-flash": "https://api.deepseek.com/chat/completions",
+    "kimi": "https://api.moonshot.cn/v1/chat/completions",
     "minimax": "https://api.minimax.io/v1/chat/completions",
 }
 
@@ -214,6 +217,39 @@ def parse_deepseek_model_spec(spec):
     return (None, stripped, None, stripped, stripped)
 
 
+def parse_kimi_model_spec(spec):
+    raw = (spec or "").strip() if isinstance(spec, str) else ""
+    if not raw:
+        return ("kimi", "kimi-k3.1-pro", None, "kimi-k3.1-pro", "Kimi-K3.1-Pro")
+    stripped = raw
+    if "/" in stripped:
+        prefix, rest = stripped.split("/", 1)
+        if prefix.strip().lower() in ("kimi", "moonshot"):
+            stripped = rest.strip()
+    tiers = "|".join(KIMI_EFFORT_TIERS)
+    hs_match = re.match(
+        rf"^(?:kimi[- ]?(?:k?3[.\-_]?1(?:[- ]?pro)?[- ]?)?(?:highspeed|fast))(?:[-:(\s]+({tiers})\)?)?$",
+        stripped,
+        re.IGNORECASE,
+    )
+    if hs_match:
+        tier = hs_match.group(1).lower() if hs_match.group(1) else None
+        canonical = f"kimi-k3.1-pro-highspeed-{tier}" if tier else "kimi-k3.1-pro-highspeed"
+        display = f"Kimi-K3.1-Pro-Highspeed ({tier.capitalize()})" if tier else "Kimi-K3.1-Pro-Highspeed"
+        return ("kimi", "kimi-k3.1-pro-highspeed", tier, canonical, display)
+    pro_match = re.match(
+        rf"^(?:moonshot|kimi(?:[- ]?k?3[.\-_]?1(?:[- ]?pro)?)?)(?:[-:(\s]+({tiers})\)?)?$",
+        stripped,
+        re.IGNORECASE,
+    )
+    if pro_match:
+        tier = pro_match.group(1).lower() if pro_match.group(1) else None
+        canonical = f"kimi-k3.1-pro-{tier}" if tier else "kimi-k3.1-pro"
+        display = f"Kimi-K3.1-Pro ({tier.capitalize()})" if tier else "Kimi-K3.1-Pro"
+        return ("kimi", "kimi-k3.1-pro", tier, canonical, display)
+    return (None, stripped, None, stripped, stripped)
+
+
 def resolve_model_token(token, providers_cfg):
     clean = token.strip() if isinstance(token, str) else ""
     if clean in providers_cfg and clean in KEY_NAMES:
@@ -235,11 +271,17 @@ def resolve_model_token(token, providers_cfg):
     ds_prov, _, _, ds_canonical, ds_display = parse_deepseek_model_spec(clean)
     if ds_prov and ds_prov in providers_cfg:
         return ds_prov, {"model": ds_canonical, "display_name": ds_display}
+    kimi_prov, _, _, kimi_canonical, kimi_display = parse_kimi_model_spec(clean)
+    if kimi_prov and kimi_prov in providers_cfg:
+        return kimi_prov, {"model": kimi_canonical, "display_name": kimi_display}
     if "/" in clean:
         prefix, custom_model = clean.split("/", 1)
         custom_model = custom_model.strip()
-        if prefix.strip().lower() == "deepseek" and custom_model and "deepseek" in providers_cfg:
+        prefix_low = prefix.strip().lower()
+        if prefix_low == "deepseek" and custom_model and "deepseek" in providers_cfg:
             return "deepseek", {"model": custom_model, "display_name": custom_model}
+        if prefix_low in ("kimi", "moonshot") and custom_model and "kimi" in providers_cfg:
+            return "kimi", {"model": custom_model, "display_name": custom_model}
     raise ValueError(f"Unknown external API provider: {clean}; native agents are managed by the session")
 
 
@@ -486,6 +528,10 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
             data["system"] = system_prompt
     else:
         url = ENDPOINTS[provider]
+        if provider == "kimi":
+            base_override = (os.environ.get("MOONSHOT_API_BASE") or os.environ.get("KIMI_BASE_URL") or "").strip().rstrip("/")
+            if base_override:
+                url = base_override if base_override.endswith("/chat/completions") else f"{base_override}/chat/completions"
         headers["Authorization"] = f"Bearer {api_key}"
         if provider == "grok" and isinstance(model, str) and model.startswith("xai/"):
             model = model.split("/", 1)[1]
@@ -493,6 +539,12 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
         if provider in ("deepseek", "deepseek-flash"):
             default_ds = "deepseek-flash" if provider == "deepseek-flash" else "deepseek-v4-pro"
             _, model, effort, _, _ = parse_deepseek_model_spec(model or default_ds)
+        elif provider == "kimi":
+            k_prov, k_model, k_effort, _, _ = parse_kimi_model_spec(model or "kimi-k3.1-pro")
+            if k_prov == "kimi":
+                model, effort = k_model, k_effort
+            elif isinstance(model, str) and model.lower().startswith(("kimi/", "moonshot/")):
+                model = model.split("/", 1)[1]
         messages = [{"role": "user", "content": prompt}]
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
@@ -613,7 +665,7 @@ def parser():
                         help="Defaults to the platform entrypoint, or headless for the shared script")
     result.add_argument("--coordinator-model", default="current", help="Session model metadata; never an API provider")
     result.add_argument("--task-id")
-    result.add_argument("--models", help="Comma-separated external providers, e.g. agy,codex,codex-max,grok,deepseek,deepseek-v4.1,deepseek-max,minimax")
+    result.add_argument("--models", help="Comma-separated external providers, e.g. agy,codex,codex-max,grok,deepseek,deepseek-v4.1,deepseek-max,kimi,kimi-highspeed,minimax")
     result.add_argument("--raw", action="store_true", help="Return worker JSON without an API aggregator")
     result.add_argument("--review", "--glm52", dest="review", action="store_true")
     result.add_argument("--cross-review", "--evidence-review", dest="cross_review", action="store_true",
@@ -687,6 +739,8 @@ def main(argv=None):
             if name == "codex" and parse_codex_model_spec(settings["model"])[1] in ("max", "xhigh"):
                 probe_timeout = 120
             elif name in ("deepseek", "deepseek-flash") and parse_deepseek_model_spec(settings["model"])[2] == "max":
+                probe_timeout = 60
+            elif name == "kimi" and parse_kimi_model_spec(settings["model"])[2] == "max":
                 probe_timeout = 60
             else:
                 probe_timeout = 35 if ptype != "API" else 20

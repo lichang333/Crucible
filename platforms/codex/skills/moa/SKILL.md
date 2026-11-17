@@ -27,8 +27,8 @@ external provider settings from the common profile.
     -- '<question>'
   ```
 
-  `--models deepseek,minimax` illustrates selecting external providers. Inspect
-  `--show-config` without making a model call. External calls use their API keys
+  `--models agy,grok,deepseek,deepseek-v4.1,glm,kimi,kimi-highspeed,minimax` illustrates selecting external providers (`agy` via Google AI Ultra and `grok` via signed-in OpenCode xAI OAuth run at `$0` API spend; `deepseek` = `DeepSeek-V4-Pro`, `deepseek-v4.1` = `DeepSeek-V4.1-Flash`, `glm` = `GLM-5.3`, `kimi` = `Kimi-K3.1-Pro` / `kimi-highspeed`, `minimax` = `MiniMax-M3`). Inspect
+  `--show-config` without making a model call. External API calls use their API keys
   and billing; native subagents use the host's own model access.
 - Use Codex's available search tools for current information. Synthesize successful
   answers in this session; Codex is not a reason to select headless API aggregation.

@@ -17,7 +17,8 @@ You are the **Swarm Coordinator** subagent in Cursor. Your primary goal is **hig
 
 ## 2. Automatic Coordinator Model Selection (Never Ask User)
 Select `--model` automatically across all **8 active `agy` families / 19 variants** (`gemini-3.8` excluded; inspect live list via `python3 "$HOME/.cursor/skills/swarm/agy_worker.py" models`):
-- Fast / mechanical L1 edits or lightweight checks: `gemini-4-argon-high` or `gemini-4-carbon-medium` (`gemini-4-argon-low` for quick lookups)
+- Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+- Fast / mechanical L1 edits or lightweight checks: `gemini-4-argon-high` or `gemini-4-carbon-medium`
 - Standard L1 / L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
 - Deep algorithmic / cross-file synthesis slice: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
 - L3 architecture, invariant design, or tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`

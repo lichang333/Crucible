@@ -34,7 +34,9 @@ preference, use the
 import the result, then sandboxed verify and reviewed-SHA apply. Credit/plan
 status is observed from the account panel, not inferred from model availability.
 Unknown or exhausted funding does not authorize API fallback. For local agy
-execution, choose a default from `agy_routes` or a suitable Claude/GPT-OSS option
+execution, choose a default from `agy_routes` (`agy_routes.filler` = `gemini-4-argon-low`
+for low-effort mock data, comments, copywriting, or boilerplate so `Carbon`/`Hydrogen`/`GPT-6-Luna`
+quota stays reserved for core logic and review) or a suitable Claude/GPT-OSS option
 from `agy_alternatives`, following the shared workflow's availability and funding
 checks. Do not substitute a native Codex/OpenAI API model ID into the agy CLI.
 
@@ -44,10 +46,13 @@ MCP broker supplies file tools and sandboxed tests; native CLI tools remain off.
 Check the actual model picker and fresh included allowance before dispatch.
 
 Prefer available included subscription allowance, following `auto_funding` in the
-shared profile. GLM, DeepSeek and MiniMax are prepaid `api_advisors` for planning
-and read-only review through the shared MoA runner; use them only with applicable
-explicit spending authorization. Their API access is not a coding-worker adapter.
-See the shared workflow's funding priority and exact advisor invocation.
+shared profile. **`Grok-4.7`** (`grok` via signed-in OpenCode xAI OAuth at `$0` API spend,
+or `XAI_API_KEY`), **`GLM-5.3`** (`glm`), **`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`**
+(`deepseek` / `deepseek-v4.1` / `deepseek-max`), **`Kimi-K3.1-Pro` / `kimi-highspeed`**
+(`kimi`, via `MOONSHOT_API_KEY` or `KIMI_API_KEY`), and **`MiniMax-M3`** (`minimax`) are
+supported `api_advisors` for planning and read-only review through the shared MoA runner;
+use prepaid APIs only with applicable explicit spending authorization. Their API access is
+not a coding-worker adapter. See the shared workflow's funding priority and exact advisor invocation.
 
 On quota exhaustion, stop and preserve the partial result. Follow the shared
 workflow's required decision by an available candidate from
