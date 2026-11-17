@@ -16,6 +16,12 @@ Use this workflow when the user invokes `/swarm`, selects `$swarm`, or explicitl
 - For read-only investigation, keep agents read-only. For implementation, prefer an isolated worktree if the active tool supports one; otherwise enforce distinct file ownership because agents may share the working tree.
 - Use the configured native role preferences in [routing.json](routing.json) only when the current subagent interface supports model selection. A configured role does not prove that model is available or was invoked; use a supported fallback and report it.
 
+## Temporary paths and cleanup
+
+- Use a run-specific temporary path. Before using a supplied path, inspect it; if it already exists, is a symlink, or appears to belong to another app or workflow, leave it untouched and choose a fresh path.
+- Track the exact paths created for the run, such as fixture repositories, briefs, and worker or verification trees. After review, required verification, and any requested apply, remove only those paths. Confirm a cleanup target resolves to the expected run-specific path before recursive deletion; never sweep a generic parent directory or another run's artifacts.
+- Keep MoA and worker run records until the final role/model/Run ID summary is complete. Report any records intentionally retained for audit.
+
 ## Boundaries and integration
 
 - This Codex workflow uses native subagents. Do not silently switch to external API calls, `agy_worker.py`, or the `/auto` workflow. Use those routes only when the user explicitly requests them or their applicable workflow has already been authorized.
