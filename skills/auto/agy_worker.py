@@ -14,7 +14,7 @@ user's current HEAD, and `apply` has re-checked sha, HEAD, cleanliness and flags
   agy_worker.py verify RUN_ID [--full] [--onto REF] -- CMD ... # patch -> fresh tree -> sandboxed CMD
   agy_worker.py review RUN_ID [--executor agy|api|auto|codex] [--model M] [--timeout S] [--json]
   agy_worker.py apply  RUN_ID --sha SHA256 [--allow-protected] [--allow-binary]
-  agy_worker.py record RUN_ID --level L1 --outcome accepted|fixed|rejected [--notes TEXT] [--defects a,b]
+  agy_worker.py record RUN_ID --level filler|L1|L2|L3 --outcome accepted|fixed|rejected [--notes TEXT] [--defects a,b]
   agy_worker.py clean  RUN_ID
   agy_worker.py list
   agy_worker.py models [--json] [--live]                       # list active agy catalog, routes & live status
@@ -1161,7 +1161,7 @@ def cmd_record(a):
     print(json.dumps(entry, ensure_ascii=False))
 
 
-API_PROVIDERS = ("grok", "deepseek", "deepseek-flash", "glm", "minimax")
+API_PROVIDERS = ("grok", "deepseek", "deepseek-flash", "glm", "kimi", "minimax")
 
 
 def _load_moa_runner():
@@ -1184,8 +1184,8 @@ def _infer_api_target(model_arg):
         return None, None
     raw = model_arg.strip()
     lower = raw.lower()
-    if lower in ("grok", "xai", "deepseek", "deepseek-flash", "glm", "zhipu", "minimax"):
-        prov = "grok" if lower == "xai" else ("glm" if lower == "zhipu" else lower)
+    if lower in ("grok", "xai", "deepseek", "deepseek-flash", "glm", "zhipu", "kimi", "moonshot", "minimax"):
+        prov = "grok" if lower == "xai" else ("glm" if lower == "zhipu" else ("kimi" if lower == "moonshot" else lower))
         return prov, None
     if lower in ("deepseek-v4.1", "deepseek-v4-1", "deepseek-v4.1-flash", "deepseek-v4-1-flash") or lower.startswith(
         ("deepseek-flash-", "deepseek-v4.1-", "deepseek-v4-1-", "deepseek-flash ", "deepseek-v4.1 ", "deepseek v4.1")
@@ -1194,8 +1194,8 @@ def _infer_api_target(model_arg):
     if "/" in raw:
         prov_part, model_part = raw.split("/", 1)
         prov_low = prov_part.strip().lower()
-        if prov_low in ("grok", "xai", "deepseek", "deepseek-flash", "glm", "zhipu", "minimax"):
-            prov = "grok" if prov_low == "xai" else ("glm" if prov_low == "zhipu" else prov_low)
+        if prov_low in ("grok", "xai", "deepseek", "deepseek-flash", "glm", "zhipu", "kimi", "moonshot", "minimax"):
+            prov = "grok" if prov_low == "xai" else ("glm" if prov_low == "zhipu" else ("kimi" if prov_low == "moonshot" else prov_low))
             model_val = model_part.strip() or None
             if prov == "deepseek" and model_val:
                 mlow = model_val.lower()
@@ -1203,7 +1203,7 @@ def _infer_api_target(model_arg):
                     return "deepseek-flash", model_val
             return prov, model_val
         return None, None
-    for prefix, prov in (("grok-", "grok"), ("deepseek-", "deepseek"), ("glm-", "glm"), ("minimax-", "minimax")):
+    for prefix, prov in (("grok-", "grok"), ("deepseek-", "deepseek"), ("glm-", "glm"), ("kimi-", "kimi"), ("moonshot-", "kimi"), ("minimax-", "minimax")):
         if lower.startswith(prefix):
             return prov, raw
     return None, None
@@ -1233,7 +1233,7 @@ def _run_api_review(review_prompt, requested_model, prior_fallbacks=None):
     keyed = [(prov, runner.provider_key(prov)) for prov in order]
     keyed = [(prov, key) for prov, key in keyed if key]
     if not keyed:
-        msg = "REFUSED: api review requires at least one configured key for grok, deepseek, glm, or minimax."
+        msg = "REFUSED: api review requires at least one configured key for grok, deepseek, glm, kimi, or minimax."
         if prior_fallbacks:
             msg += f" (prior agy failures: {json.dumps(prior_fallbacks, ensure_ascii=False)})"
         sys.exit(msg)
@@ -1242,7 +1242,7 @@ def _run_api_review(review_prompt, requested_model, prior_fallbacks=None):
     for prov, key in keyed:
         settings = dict(providers_cfg[prov])
         if prov == req_prov and req_explicit_model:
-            if prov in ("deepseek", "deepseek-flash") and hasattr(runner, "resolve_model_token"):
+            if prov in ("deepseek", "deepseek-flash", "kimi") and hasattr(runner, "resolve_model_token"):
                 try:
                     resolved_prov, resolved_settings = runner.resolve_model_token(req_explicit_model, providers_cfg)
                     if resolved_prov in providers_cfg:
@@ -1733,13 +1733,13 @@ def main():
     r.add_argument("--executor", choices=["agy", "api", "auto", "codex"],
                    help="review backend (auto tries agy cross-pool, ChatGPT codex, then api; agy uses Google AI Ultra; codex uses ChatGPT/Codex CLI; api uses moa_runner providers)")
     r.add_argument("--model", default=None,
-                   help="model for review (defaults to gemini-pro-orchestrator for agy/auto, grok/deepseek/glm/minimax for api, gpt-6-luna-high or gpt-6-luna-max for codex)")
+                   help="model for review (defaults to gemini-pro-orchestrator for agy/auto, grok/deepseek/glm/kimi/minimax for api, gpt-6-luna-high or gpt-6-luna-max for codex)")
     r.add_argument("--timeout", type=int, default=600)
     r.add_argument("--json", action="store_true", help="output JSON review record")
     r.set_defaults(fn=cmd_review)
     r = sp.add_parser("record")
     r.add_argument("run_id")
-    r.add_argument("--level", required=True, choices=["L1", "L2", "L3"])
+    r.add_argument("--level", required=True, choices=["filler", "L1", "L2", "L3"])
     r.add_argument("--outcome", required=True, choices=["accepted", "fixed", "rejected"])
     r.add_argument("--defects")
     r.add_argument("--notes")

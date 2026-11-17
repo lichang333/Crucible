@@ -9,6 +9,7 @@ ChatGPT-authenticated **`codex`** (`GPT-6-Luna (High)` / `gpt-6-luna-high` defau
 **`grok`** (`Grok-4.7` via signed-in OpenCode xAI OAuth subscription at zero API cost or
 `XAI_API_KEY`), optional prepaid APIs `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`,
 plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort),
+`kimi` (`Kimi-K3.1-Pro` + `kimi-highspeed` & `kimi-max` effort when `MOONSHOT_API_KEY`/`KIMI_API_KEY` is set),
 and `minimax` (`MiniMax-M3`), and optional Claude Code subscription bridges) provide
 parallel Q&A analysis, isolated coding slices, and cross-family cold-eyes verification.
 
@@ -137,7 +138,7 @@ models or load paid API keys:
   auto-preferring `/Applications/ChatGPT.app` bundled `codex` over stale `/opt/homebrew/bin/codex`),
   subscription/keyed `grok` (`Grok-4.7` via OpenCode `xai` OAuth or `XAI_API_KEY`), and active
   prepaid API fallbacks (`deepseek` / `DeepSeek-V4-Pro`, `deepseek-v4.1` / `DeepSeek-V4.1-Flash`
-  + `deepseek-max`, `glm` / `GLM-5.3`, `minimax` / `MiniMax-M3`). Legacy direct `openai`, `anthropic`, and `gemini` API entries remain retired.
+  + `deepseek-max`, `glm` / `GLM-5.3`, `kimi` / `Kimi-K3.1-Pro` + `kimi-highspeed` / `kimi-max`, `minimax` / `MiniMax-M3`). Legacy direct `openai`, `anthropic`, and `gemini` API entries remain retired.
 
 For API-backed Q&A, application profiles default to raw collection:
 

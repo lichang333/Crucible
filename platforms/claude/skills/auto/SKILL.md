@@ -27,9 +27,13 @@ MCP broker supplies file tools and sandboxed tests; native CLI tools remain off.
 Check the actual model picker and fresh included allowance before dispatch.
 
 Prefer available included subscription allowance, following `auto_funding` in the
-shared profile. GLM, DeepSeek and MiniMax are prepaid `api_advisors` for planning
-and read-only review through the shared MoA runner; use them only with applicable
-explicit spending authorization. Their API access is not a coding-worker adapter.
+shared profile. For low-effort mock data, comments, copy, or boilerplate slices, use
+`agy_routes.filler` (`gemini-4-argon-low`) to reserve `Carbon`/`Hydrogen`/`GPT-6-Luna`
+quota for core logic and review. `Grok-4.7` (`grok`), `GLM-5.3` (`glm`), `DeepSeek-V4-Pro` /
+`DeepSeek-V4.1-Flash` (`deepseek` / `deepseek-v4.1` / `deepseek-max`), `Kimi-K3.1-Pro`
+(`kimi` / `kimi-highspeed`), and `MiniMax-M3` (`minimax`) are supported `api_advisors` for
+planning and read-only review through the shared MoA runner; use prepaid APIs only with
+applicable explicit spending authorization. Their API access is not a coding-worker adapter.
 See the shared workflow's funding priority and exact advisor invocation.
 
 On quota exhaustion, stop and preserve the partial result. The shared workflow

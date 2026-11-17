@@ -8,5 +8,5 @@
     "implementer": "gpt-6.1-sol",
     "explorer": "gpt-6-luna"
   },
-  "worker_defaults": ["agy", "grok", "glm", "deepseek", "minimax"]
+  "worker_defaults": ["agy", "grok", "glm", "deepseek", "kimi", "minimax"]
 }

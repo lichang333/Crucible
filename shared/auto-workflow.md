@@ -33,6 +33,7 @@ user's funding preference. agy retains its local guard and sandbox. An executor'
 | Level | Task | Route |
 |---|---|---|
 | L0 | Small/context-heavy edit, live operation, guard/sandbox change or urgent fix | Coordinator |
+| filler | Mechanical mock data, comments, docs copy, or boilerplate formatting | Profile's `agy_routes.filler` (`gemini-4-argon-low`, or bridged `grok` / `deepseek-v4.1` for text) |
 | L1 | Mechanical implementation with a precise brief | Profile's `agy_routes.l1` |
 | L2 | Multi-file feature or bug with clear acceptance criteria | Profile's `agy_routes.l2` |
 | L3 | Architecture, ambiguity or consequential logic | Plan first, then split into L1/L2; independent review as needed |
@@ -130,7 +131,7 @@ extra-credit-only subscription entries count as paid usage. Preserve an explicit
 user choice for a particular task. This is coordinator routing policy, not an
 automatic billing control implemented in the worker.
 
-`api_advisors.providers` includes GLM, DeepSeek and MiniMax. The user identifies
+`api_advisors.providers` includes Grok, GLM, DeepSeek (`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`), Kimi (`Kimi-K3.1-Pro` / `kimi-highspeed`), and MiniMax. The user identifies
 these as prepaid channels. Remember them as candidates, but their keys, balances
 or inclusion in the list do not by themselves authorize consuming credit. Before
 a paid call, check for applicable explicit spending authorization in this session;

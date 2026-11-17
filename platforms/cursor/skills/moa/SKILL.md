@@ -10,12 +10,12 @@ The current Cursor session is the coordinator and final synthesizer. Read [the s
 ## Why this lineup saves Cursor credits and cost
 - **Host (Cursor)**: Anchor vote with live codebase tools and web search, plus final synthesis (avoids extra host agent loops or a paid API aggregator call).
 - **Default Workers (from `routing.json`)**:
-  - `agy` (`Orchestrator (Carbon)` / `gemini-pro-orchestrator`): runs read-only via local `agy --mode plan` on your **Google AI Ultra subscription (\$0 marginal API cost)**.
-  - `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`, plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort), & `minimax` (`MiniMax-M3`): independent non-Google model families via prepaid APIs when multi-family API diversity is needed.
-- **Zero-API-cost single consult**: pass `--models agy` when you only want a second opinion from `Orchestrator (Carbon)` without spending prepaid API tokens.
+  - `agy` (`Orchestrator (Carbon)` / `gemini-pro-orchestrator`), `codex` (`GPT-6-Luna (High)`), & `grok` (`Grok-4.7`): subscription-backed (**\$0 marginal API cost**).
+  - `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`, plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort), `kimi` (`Kimi-K3.1-Pro` + `kimi-highspeed` / `kimi-max` when `MOONSHOT_API_KEY` or `KIMI_API_KEY` is set), & `minimax` (`MiniMax-M3`): independent non-Google model families via prepaid APIs when multi-family API diversity is needed.
+- **Zero-API-cost single consult**: pass `--models agy` (or `--models agy,codex,grok`) when you only want opinions without spending prepaid API tokens.
 - **3-Tier Automatic Failover**:
-  - **Tier 1 (`agy` dual pools)** & **Tier 2 (`agy` unsubscribed/uninstalled/exhausted)**: `agy_worker.py review --executor auto` fails over across Gemini 4 / Orchestrator and Claude 5.5 / `gpt-oss-120b-medium`, then falls back to `--executor api` (`deepseek` -> `glm` -> `minimax`); coding downgrades to the Cursor native host or scoped subagents (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`).
-  - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `moa_runner.py` (`--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`deepseek` -> `glm` -> `minimax`).
+  - **Tier 1 (`agy` dual pools)** & **Tier 2 (`agy` unsubscribed/uninstalled/exhausted)**: `agy_worker.py review --executor auto` fails over across Gemini 4 / Orchestrator and Claude 5.5 / `gpt-oss-120b-medium`, then ChatGPT `codex` (`gpt-6-luna-high`) / `grok`, then `--executor api`; coding downgrades to the Cursor native host or scoped subagents (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`).
+  - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `moa_runner.py` (`--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`).
 
 ## Operating steps
 1. Verify the user supplied a prompt (if not, ask directly or use Cursor's question tool). Strip workflow-only flags (`--deep`, `--fast`, `--no-deep`) before passing the prompt to the script.

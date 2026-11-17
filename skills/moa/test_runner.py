@@ -66,10 +66,12 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(headless["providers"]["glm"], {"model": "glm-5.3", "display_name": "GLM-5.3"})
         self.assertEqual(headless["providers"]["deepseek"], {"model": "deepseek-v4-pro", "display_name": "DeepSeek-V4-Pro"})
         self.assertEqual(headless["providers"]["deepseek-flash"], {"model": "deepseek-flash", "display_name": "DeepSeek-V4.1-Flash"})
-        self.assertEqual(headless["api_advisors"]["providers"], ["grok", "glm", "deepseek", "deepseek-flash", "minimax"])
-        self.assertEqual(headless["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "minimax"])
-        self.assertEqual(headless["aggregation_priority"], ["agy", "codex", "grok", "deepseek", "deepseek-flash", "glm", "minimax"])
-        self.assertEqual(codex["worker_defaults"], ["agy", "grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(headless["providers"]["kimi"], {"model": "kimi-k3.1-pro", "display_name": "Kimi-K3.1-Pro"})
+        self.assertEqual(headless["agy_routes"]["filler"], "gemini-4-argon-low")
+        self.assertEqual(headless["api_advisors"]["providers"], ["grok", "glm", "deepseek", "deepseek-flash", "kimi", "minimax"])
+        self.assertEqual(headless["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "kimi", "minimax"])
+        self.assertEqual(headless["aggregation_priority"], ["agy", "codex", "grok", "deepseek", "deepseek-flash", "glm", "kimi", "minimax"])
+        self.assertEqual(codex["worker_defaults"], ["agy", "grok", "glm", "deepseek", "kimi", "minimax"])
 
     def test_config_preview_does_not_read_keys_call_models_or_create_records(self):
         for alias in ("--show-config", "--dry-run"):
@@ -418,10 +420,11 @@ class RunnerTests(unittest.TestCase):
     def test_cursor_profile_uses_agy_orchestrator_and_raw_mode(self):
         cfg = runner.load_config("cursor")
         self.assertEqual(cfg["mode"], "raw")
-        self.assertEqual(cfg["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "minimax"])
-        self.assertEqual(runner.load_config("codex")["worker_defaults"], ["agy", "grok", "glm", "deepseek", "minimax"])
+        self.assertEqual(cfg["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "kimi", "minimax"])
+        self.assertEqual(runner.load_config("codex")["worker_defaults"], ["agy", "grok", "glm", "deepseek", "kimi", "minimax"])
         self.assertEqual(cfg["reviewer"]["provider"], "agy")
         self.assertEqual(cfg["reviewer"]["model"], "gemini-pro-orchestrator")
+        self.assertEqual(cfg["agy_routes"]["filler"], "gemini-4-argon-low")
         self.assertEqual(cfg["agy_routes"]["l1"], "gemini-4-carbon-high")
         self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator", "gemini-4-carbon-high"])
 
@@ -1108,6 +1111,102 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(recorded_doc["deepseek"], ("synthetic-ds-key", "deepseek-v4-pro-max", 128, 60))
         self.assertEqual(recorded_doc["deepseek-flash"], ("synthetic-ds-key", "deepseek-flash", 128, 20))
+
+    def test_kimi_k3_1_pro_highspeed_and_effort_selectors(self):
+        self.assertEqual(
+            runner.parse_kimi_model_spec("kimi"),
+            ("kimi", "kimi-k3.1-pro", None, "kimi-k3.1-pro", "Kimi-K3.1-Pro"),
+        )
+        self.assertEqual(
+            runner.parse_kimi_model_spec("moonshot"),
+            ("kimi", "kimi-k3.1-pro", None, "kimi-k3.1-pro", "Kimi-K3.1-Pro"),
+        )
+        self.assertEqual(
+            runner.parse_kimi_model_spec("kimi-highspeed"),
+            ("kimi", "kimi-k3.1-pro-highspeed", None, "kimi-k3.1-pro-highspeed", "Kimi-K3.1-Pro-Highspeed"),
+        )
+        self.assertEqual(
+            runner.parse_kimi_model_spec("kimi-max"),
+            ("kimi", "kimi-k3.1-pro", "max", "kimi-k3.1-pro-max", "Kimi-K3.1-Pro (Max)"),
+        )
+        self.assertEqual(
+            runner.parse_kimi_model_spec("kimi-highspeed-low"),
+            ("kimi", "kimi-k3.1-pro-highspeed", "low", "kimi-k3.1-pro-highspeed-low", "Kimi-K3.1-Pro-Highspeed (Low)"),
+        )
+
+        code, stdout, stderr, call = self.invoke(["--models", "kimi-highspeed", "--show-config"])
+        self.assertEqual(code, 0, stderr)
+        cfg = json.loads(stdout)
+        self.assertEqual(
+            cfg["selected_workers"],
+            [{"provider": "kimi", "model": "kimi-k3.1-pro-highspeed", "display_name": "Kimi-K3.1-Pro-Highspeed"}],
+        )
+        call.assert_not_called()
+
+        code, stdout, stderr, call = self.invoke(["--models", "kimi,deepseek-v4.1", "--show-config"])
+        self.assertEqual(code, 0, stderr)
+        cfg_both = json.loads(stdout)
+        self.assertEqual(
+            cfg_both["selected_workers"],
+            [
+                {"provider": "kimi", "model": "kimi-k3.1-pro", "display_name": "Kimi-K3.1-Pro"},
+                {"provider": "deepseek-flash", "model": "deepseek-flash", "display_name": "DeepSeek-V4.1-Flash"},
+            ],
+        )
+        call.assert_not_called()
+
+        seen_requests = []
+
+        class _FakeHTTPResp:
+            def __init__(self, content_str):
+                self._raw = json.dumps({"choices": [{"message": {"content": content_str}}]}).encode("utf-8")
+
+            def read(self):
+                return self._raw
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            seen_requests.append((req.full_url, json.loads(req.data.decode("utf-8"))))
+            return _FakeHTTPResp("PONG")
+
+        with patch.object(runner.urllib.request, "urlopen", side_effect=fake_urlopen):
+            res_max = runner.call_model("kimi", "Ping", "kimi-key", "kimi-k3.1-pro-max")
+            with patch.dict(os.environ, {"MOONSHOT_API_BASE": "https://api.moonshot.ai/v1"}):
+                res_hs = runner.call_model("kimi", "Ping", "kimi-key", "kimi-k3.1-pro-highspeed")
+        self.assertEqual(res_max, "PONG")
+        self.assertEqual(res_hs, "PONG")
+        self.assertEqual(seen_requests[0][0], "https://api.moonshot.cn/v1/chat/completions")
+        self.assertEqual(seen_requests[0][1]["model"], "kimi-k3.1-pro")
+        self.assertEqual(seen_requests[0][1]["reasoning_effort"], "max")
+        self.assertEqual(seen_requests[1][0], "https://api.moonshot.ai/v1/chat/completions")
+        self.assertEqual(seen_requests[1][1]["model"], "kimi-k3.1-pro-highspeed")
+        self.assertNotIn("reasoning_effort", seen_requests[1][1])
+
+        os.environ["MOONSHOT_API_KEY"] = "synthetic-kimi-key"
+        recorded_doc = {}
+        code, stdout, stderr, _ = self.invoke(
+            ["--models", "kimi-max", "--doctor"],
+            side_effect=lambda p, pr, k, m, system_prompt=None, max_tokens=None, timeout=None: (
+                recorded_doc.setdefault(p, (k, m, max_tokens, timeout)) and "PONG"
+            ),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(recorded_doc["kimi"], ("synthetic-kimi-key", "kimi-k3.1-pro-max", 128, 60))
+
+        recorded_hs = {}
+        code, stdout, stderr, _ = self.invoke(
+            ["--models", "kimi-highspeed", "--doctor"],
+            side_effect=lambda p, pr, k, m, system_prompt=None, max_tokens=None, timeout=None: (
+                recorded_hs.setdefault(p, (k, m, max_tokens, timeout)) and "PONG"
+            ),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(recorded_hs["kimi"], ("synthetic-kimi-key", "kimi-k3.1-pro-highspeed", 128, 20))
 
 
 if __name__ == "__main__":

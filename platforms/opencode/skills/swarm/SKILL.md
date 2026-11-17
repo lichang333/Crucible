@@ -21,14 +21,15 @@ Your primary optimization goal is **high quality at minimal paid API token cost*
    - **Avoid spawning multiple `subagent(agent="general")` writers by default**: each `general` subagent inherits the host's paid API model (e.g., `zhipu/glm-5.3`) and re-reads context, multiplying API token spend 3–5×.
    - Instead, split the task into **2–4 disjoint slices** (`<owned_files>` must not overlap) and launch concurrent `agy_worker.py run` processes in one turn (or background shell commands / parallel `shell` calls).
    - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.config/opencode/skills/swarm/agy_worker.py" models`):
-     - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium` (`gemini-4-argon-low` for quick checks)
+     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+     - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium`
      - Standard L1/L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
      - Deep algorithmic / multi-file synthesis: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
      - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
      - **3-tier automatic quota / unsubscribed failover**:
        - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
        - **Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted)**: automatically downgrade to the OpenCode native host or scoped native subagents (`general` / `explore`) using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, plus `agy_worker.py review --executor auto` (which fails over at `$0` API spend to ChatGPT-authenticated **`codex`** `gpt-6-luna-high`, auto-preferring newer `/Applications/ChatGPT.app` bundled `codex`, and OpenCode **`grok`**, before `--executor api`; pass `--model codex-max` / `gpt-6-luna-max` for max-effort Codex review).
-       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `glm` -> `minimax`); in the OpenCode TUI, switching to another provider or `opencode/glm-5.3-flash-free` continues seamlessly.
+       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`; supports `deepseek-v4.1` / `deepseek-max` / `kimi-highspeed` / `kimi-max`); in the OpenCode TUI, switching to another provider or `opencode/glm-5.3-flash-free` continues seamlessly.
 
    | Family | Tier | Canonical Model IDs (19 total; `gemini-3.8` retired) |
    |---|---|---|
