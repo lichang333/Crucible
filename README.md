@@ -15,7 +15,7 @@ parallel Q&A analysis, isolated coding slices, and cross-family cold-eyes verifi
 |---|---|---|
 | `/moa` | Multi-model Q&A and analysis | Read-only `agy` (`Orchestrator (Carbon)`) + `codex` (`GPT-6-Luna (High / Max)` via ChatGPT subscription) + `grok` (OpenCode xAI subscription or `XAI_API_KEY`) + configured API answers (`glm`/`deepseek`/`minimax`); current-session synthesis |
 | `/auto` | Delegated single-module coding | Isolated `agy` sandbox worker (or native Claude Code CLI / Claude cloud bridge); cross-family review + local `verify --full` & `apply --sha` |
-| `/swarm` | Parallel multi-file orchestration | Automatic prefix-free triage in Antigravity / `agy` (`always_on` rule), OpenCode (`default_agent: swarm`), & Cursor (`alwaysApply` rule + `swarm-coordinator`), splitting work into disjoint sandboxed `agy` slices with cross-family verification and cross-pool quota failover |
+| `/swarm` | Parallel multi-file orchestration | Codex uses native subagents with disjoint scopes; Antigravity / `agy` (`always_on` rule), OpenCode (`default_agent: swarm`), and Cursor (`alwaysApply` rule + `swarm-coordinator`) use isolated `agy` slices with cross-family verification and quota failover |
 
 Provider models, active `agy` family tiers (`agy_catalog` / `agy_routes` / `agy_alternatives`),
 and role defaults live in `config/`; application profiles (`codex.json`, `claude.json`,
@@ -30,7 +30,7 @@ entrypoint applies; platform folders are symlinks into the shared implementation
 
 ```text
 AGENTS.md / CLAUDE.md / GEMINI.md   platform-specific project entrypoints
-platforms/codex/skills/             Codex moa and auto skill entrypoints
+platforms/codex/skills/             Codex moa, auto and swarm skill entrypoints
 platforms/claude/skills/            Claude moa and auto skill entrypoints
 platforms/gemini/skills/            Antigravity / Gemini moa, auto and swarm skill entrypoints
 platforms/gemini/rules/             Antigravity / agy always_on triage rule (`swarm-coordinator.md`)
@@ -55,7 +55,7 @@ in the existing local `skills/moa/.env`, with no per-platform copy.
 ```bash
 ./install.sh --dry-run
 ./install.sh                         # all platforms (codex, claude, gemini, opencode, cursor)
-./install.sh --platform codex        # only Codex
+./install.sh --platform codex        # only Codex (moa, auto, swarm)
 ./install.sh --platform claude       # only Claude
 ./install.sh --platform gemini       # only Gemini / agy (moa, auto, swarm skills + always_on rule; alias: --platform agy)
 ./install.sh --platform opencode     # only OpenCode (moa, auto, swarm skills + swarm agent)
@@ -63,7 +63,8 @@ in the existing local `skills/moa/.env`, with no per-platform copy.
 ```
 
 Install targets:
-- **Codex**: `~/.agents/skills/{moa,auto}`
+- **Codex**: `~/.agents/skills/{moa,auto,swarm}`. Invoke `swarm` for parallel Codex
+  subagents; it uses native Codex agents and keeps external worker/API routes separate.
 - **Claude**: `~/.claude/skills/{moa,auto}`
 - **Gemini / Antigravity (`agy`)**: `~/.gemini/config/skills/{moa,auto,swarm}` plus
   `~/.gemini/config/rules/swarm-coordinator.md` (`trigger: always_on`, active across `agy` CLI,

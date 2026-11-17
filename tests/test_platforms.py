@@ -37,10 +37,18 @@ class PlatformPackages(unittest.TestCase):
                     profile = json.loads((entry / "routing.json").read_text())
                     self.assertTrue((entry / profile["extends"]).is_file())
 
-        for platform in ("gemini", "opencode", "cursor"):
+        for platform in ("codex", "gemini", "opencode", "cursor"):
             swarm_entry = ROOT / "platforms" / platform / "skills/swarm"
             with self.subTest(platform=platform, skill="swarm"):
                 self.assertTrue((swarm_entry / "SKILL.md").is_file())
+                if platform == "codex":
+                    skill_text = (swarm_entry / "SKILL.md").read_text()
+                    self.assertTrue(skill_text.startswith("---\n"))
+                    self.assertIn("name: swarm", skill_text.split("---\n", 2)[1])
+                    self.assertTrue((swarm_entry / "routing.json").is_symlink())
+                    self.assertEqual((swarm_entry / "routing.json").resolve(),
+                                     (ROOT / "config/codex.json").resolve())
+                    continue
                 swarm_expected = {
                     "agy_worker.py": ROOT / "skills/auto/agy_worker.py",
                     "moa_runner.py": ROOT / "skills/moa/moa_runner.py",
