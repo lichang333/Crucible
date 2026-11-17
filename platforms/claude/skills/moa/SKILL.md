@@ -17,7 +17,10 @@ python3 "$HOME/.claude/skills/moa/moa_runner.py" --platform claude --raw \
   -- '<question>'
 ```
 
-Select a relevant subset with `--models` when useful. API workers and optional
+Select a relevant subset with `--models` when useful (for example, `--models agy,codex,grok`
+for `$0` marginal API spend via local Google AI Ultra, ChatGPT/Codex CLI, and OpenCode xAI
+subscriptions, or add prepaid/keyed `deepseek`, `deepseek-v4.1`, `glm`, `kimi`, `kimi-highspeed`,
+and `minimax`, with inline `-low`/`-high`/`-max` effort selectors where supported). API workers and optional
 API review consume their providers' quotas; synthesis here avoids an additional
 aggregator API call but still uses the current session's allowance.
 

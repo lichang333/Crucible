@@ -29,7 +29,7 @@ Use `--platform headless` only when API aggregation is wanted; this adds a paid
 aggregator call. A bare invocation of the shared core script retains legacy
 headless behavior.
 
-`--models` accepts comma-separated provider names (default active set: `agy`, `codex`, `grok`, `glm`, `deepseek`, `minimax`; the `codex` platform omits `codex` to avoid self-voting, and `opencode` defaults to `agy`, `deepseek`, `minimax`). Prefer a relevant subset when
+`--models` accepts comma-separated provider names (default active set: `agy`, `codex`, `grok`, `glm`, `deepseek`, `kimi`, `minimax`; the `codex` platform omits `codex` to avoid self-voting, `opencode` defaults to `agy`, `deepseek`, `minimax`, `deepseek-v4.1` / `deepseek-flash` (`DeepSeek-V4.1-Flash`) is selectable on-demand to avoid double-billing DeepSeek, and both `deepseek` and `kimi`—including `kimi-highspeed`—accept `-low`/`-high`/`-max` `reasoning_effort` selectors). Prefer a relevant subset when
 it suffices; the legacy default remains all configured providers. Keys are local
 to the shared `skills/moa/.env` or the existing environment/Desktop fallback.
 The `agy` provider executes locally in read-only `--mode plan` via `agy` (default model `gemini-pro-orchestrator`, `Orchestrator (Carbon)`) using the user's Google AI Ultra subscription without requiring an API key.
@@ -108,7 +108,7 @@ To probe connectivity, authentication, and response latency across configured AP
 
 ```bash
 python3 "$R" --doctor
-python3 "$R" --models codex-max,grok,deepseek,glm --doctor
+python3 "$R" --models codex-max,grok,deepseek,deepseek-v4.1,glm,kimi,kimi-highspeed --doctor
 ```
 
 This pings targets concurrently (`max_tokens=128` so reasoning models do not truncate) and displays a summary table reporting type (`API`, `OAuth CLI`, or `Local CLI`), status (`✅ OK`, `⚠️ No Auth`, or `❌ Error`), round-trip latency, and diagnostic details without writing run records.
