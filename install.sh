@@ -31,7 +31,7 @@ def main():
                     "cursor": user_home / ".cursor/skills"}
     platform_skills = {"codex": ("moa", "auto", "swarm"),
                        "claude": ("moa", "auto"),
-                       "gemini": ("moa", "auto", "swarm"),
+                       "gemini": ("moa", "auto", "swarms"),
                        "opencode": ("moa", "auto", "swarm"),
                        "cursor": ("moa", "auto", "swarm")}
     selected = "gemini" if args.platform == "agy" else args.platform
@@ -140,6 +140,19 @@ def main():
         else:
             shutil.copyfile(example_path, env_path)
             print("created skills/moa/.env from .env.example — fill in your keys")
+
+    if "gemini" in platforms:
+        legacy_gemini_swarm = destinations["gemini"] / "swarm"
+        if legacy_gemini_swarm.is_symlink():
+            old_target = Path(os.path.abspath(legacy_gemini_swarm.parent / os.readlink(legacy_gemini_swarm))).resolve()
+            if old_target in ((repo / "platforms/gemini/skills/swarm").resolve(),
+                              (repo / "platforms/agy/skills/swarm").resolve()):
+                saved_path = backup_path(legacy_gemini_swarm)
+                if args.dry_run:
+                    print(f"would remove legacy skill link {legacy_gemini_swarm}")
+                else:
+                    shutil.move(str(legacy_gemini_swarm), str(saved_path))
+                    print(f"backup  {legacy_gemini_swarm} -> {saved_path}")
 
     for target, path in links:
         if path.is_symlink() and path.resolve() == target.resolve():

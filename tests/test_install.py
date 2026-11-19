@@ -31,7 +31,7 @@ class InstallTests(unittest.TestCase):
         self.write("skills/moa/.env.example", "EXAMPLE_API_KEY=\n")
         self.write("skills/auto/agy_guard.py", "#!/usr/bin/env python3\n")
         for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
-            skills = ("moa", "auto", "swarm") if platform in ("codex", "gemini", "opencode", "cursor") else ("moa", "auto")
+            skills = ("moa", "auto", "swarms") if platform == "gemini" else ("moa", "auto", "swarm") if platform in ("codex", "opencode", "cursor") else ("moa", "auto")
             for skill in skills:
                 self.write(f"platforms/{platform}/skills/{skill}/SKILL.md",
                            f"{platform}: {skill}\n")
@@ -91,7 +91,7 @@ class InstallTests(unittest.TestCase):
                      else ".config/opencode" if platform == "opencode"
                      else ".cursor" if platform == "cursor"
                      else ".gemini/config")
-        skills = ("moa", "auto", "swarm") if platform in ("codex", "gemini", "opencode", "cursor") else ("moa", "auto")
+        skills = ("moa", "auto", "swarms") if platform == "gemini" else ("moa", "auto", "swarm") if platform in ("codex", "opencode", "cursor") else ("moa", "auto")
         for skill in skills:
             path = self.user_home / directory / "skills" / skill
             self.assertTrue(path.is_symlink())
@@ -413,6 +413,29 @@ class InstallTests(unittest.TestCase):
         result = self.invoke("--platform", "gemini", success=False)
         self.assertEqual(before, self.snapshot())
         self.assertIn("missing agent entry point", result.stderr)
+
+    def test_gemini_legacy_swarm_link_is_migrated_to_swarms(self):
+        legacy = self.link(".gemini/config/skills/swarm", self.repo / "platforms/gemini/skills/swarm")
+        before = self.snapshot()
+        result = self.invoke("--platform", "gemini", "--dry-run")
+        self.assertIn("would remove legacy skill link", result.stdout)
+        self.assertEqual(before, self.snapshot())
+
+        self.invoke("--platform", "gemini")
+        self.assert_installed("gemini")
+        self.assertFalse(legacy.is_symlink())
+        saved = {path.name: path for path in self.backups()}
+        self.assertEqual(saved[".gemini_config_skills_swarm"].readlink(),
+                         self.repo / "platforms/gemini/skills/swarm")
+
+    def test_gemini_migration_preserves_unrelated_swarm_link(self):
+        custom = self.write("custom/swarm/SKILL.md", "custom swarm", home=True)
+        legacy = self.link(".gemini/config/skills/swarm", custom.parent)
+
+        self.invoke("--platform", "gemini")
+
+        self.assert_installed("gemini")
+        self.assertEqual(legacy.readlink(), custom.parent)
 
 
 if __name__ == "__main__":
