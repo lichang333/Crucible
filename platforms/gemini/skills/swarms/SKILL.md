@@ -1,14 +1,14 @@
 ---
-name: swarm
-description: Split large, multi-file, or complex coding and verification tasks in Antigravity (agy) into parallel isolated workstreams (runs automatically via the global swarm-coordinator rule or on /swarm), dispatching sandboxed agy_worker.py slices with model selection from the shared catalog and cross-family cold-eyes verification.
+name: swarms
+description: Split large, multi-file, or complex coding and verification tasks in Antigravity (agy) into parallel isolated workstreams (runs automatically via the global swarm-coordinator rule or on /swarms; leaves /swarm free for native Swarm UI), dispatching sandboxed agy_worker.py slices with model selection from the shared catalog and cross-family cold-eyes verification.
 ---
 
-# Swarm: Isolated Parallel Orchestration & Cross-Family Verification (Antigravity / agy)
+# Swarms: Isolated Parallel Orchestration & Cross-Family Verification (Antigravity / agy)
 
-You are the **Swarm Coordinator** running in Antigravity (`agy` CLI, Antigravity App, or Antigravity IDE). This workflow applies automatically via the global `swarm-coordinator` rule (`~/.gemini/config/rules/swarm-coordinator.md`, no `/swarm` prefix needed) and when invoked explicitly via `/swarm`.
+You are the **Swarm Coordinator** running in Antigravity (`agy` CLI, Antigravity App, or Antigravity IDE). This workflow applies automatically via the global `swarm-coordinator` rule (`~/.gemini/config/rules/swarm-coordinator.md`, no `/swarms` prefix needed) and when invoked explicitly via `/swarms` (while `/swarm` remains reserved for Antigravity's built-in Native Swarm Board UI).
 
 - **Sub-Worker / Subagent Exemption**: If this session is already a delegated `agy_worker.py` worker (`You are a coding worker.` / `TASK BRIEF:` or cwd under `auto-worker/`), a headless `--mode plan` review/advisor run (`auto-review-` / `moa-`), or a spawned subagent (`invoke_subagent` / `<swarm_worker>`), execute your assigned task directly and do NOT launch nested `agy_worker.py` / `moa_runner.py` swarms.
-- **Native Swarm Board Opt-In**: If the user explicitly asks for Antigravity's built-in interactive Swarm message board UI, read `~/.gemini/antigravity/builtin/skills/native_swarm/SKILL.md` (or `~/.gemini/antigravity-cli/builtin/skills/native_swarm/SKILL.md`) and drive the native `swarm` tool instead.
+- **Native Swarm Board Opt-In**: When the user invokes native `/swarm` or explicitly asks for Antigravity's built-in interactive Swarm message board UI, read `~/.gemini/antigravity/builtin/skills/native_swarm/SKILL.md` (or `~/.gemini/antigravity-cli/builtin/skills/native_swarm/SKILL.md`) and drive the native `swarm` tool instead.
 
 Keep the current Antigravity coordinator turn lean as planner/integrator, and dispatch isolated coding slices, test iteration, and adversarial cross-family patch review through [agy_worker.py](agy_worker.py) (configured in [routing.json](routing.json) and [headless.json](headless.json); rules in [auto-workflow.md](auto-workflow.md)).
 
@@ -22,7 +22,7 @@ Keep the current Antigravity coordinator turn lean as planner/integrator, and di
 1. **Coding & Test-Fix Waves -> Parallel `agy_worker.py` (`$0` marginal API tokens)**:
    - Native Antigravity subagents do not inherit `agy_guard.py` or standalone `$TMPDIR` git isolation; use `agy_worker.py` for delegated coding slices inside git repos.
    - Split multi-file work into **2–4 disjoint slices** (`OWNED FILES` must not overlap) and launch concurrent `agy_worker.py run --platform gemini` processes in one turn.
-   - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.gemini/config/skills/swarm/agy_worker.py" models`):
+   - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.gemini/config/skills/swarms/agy_worker.py" models`):
      - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — reserve `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
      - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium`
      - Standard L1/L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
@@ -52,7 +52,7 @@ Keep the current Antigravity coordinator turn lean as planner/integrator, and di
 4. **Sequential Integration & Cleanup**:
    - Never apply overlapping patches blindly. Apply one reviewed patch at a time:
      ```bash
-     W="$HOME/.gemini/config/skills/swarm/agy_worker.py"
+     W="$HOME/.gemini/config/skills/swarms/agy_worker.py"
      python3 "$W" apply '<run-id-1>' --sha '<reviewed-sha-1>'
      ```
    - When integrating multiple slices, re-verify the next slice against the updated `HEAD` (`python3 "$W" verify '<run-id-2>' --full -- <test-cmd>`) so cross-slice integration regressions are caught in the sandbox before `apply`.

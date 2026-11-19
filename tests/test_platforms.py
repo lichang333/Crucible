@@ -38,8 +38,9 @@ class PlatformPackages(unittest.TestCase):
                     self.assertTrue((entry / profile["extends"]).is_file())
 
         for platform in ("codex", "gemini", "opencode", "cursor"):
-            swarm_entry = ROOT / "platforms" / platform / "skills/swarm"
-            with self.subTest(platform=platform, skill="swarm"):
+            skill_name = "swarms" if platform == "gemini" else "swarm"
+            swarm_entry = ROOT / "platforms" / platform / "skills" / skill_name
+            with self.subTest(platform=platform, skill=skill_name):
                 self.assertTrue((swarm_entry / "SKILL.md").is_file())
                 swarm_expected = {
                     "agy_worker.py": ROOT / "skills/auto/agy_worker.py",
@@ -157,13 +158,14 @@ class PlatformPackages(unittest.TestCase):
         self.assertIn("description:", rule_fm)
         self.assertIn("Sub-Worker / Subagent Exemption", rule_text)
 
-        swarm_skill = ROOT / "platforms/gemini/skills/swarm/SKILL.md"
+        swarm_skill = ROOT / "platforms/gemini/skills/swarms/SKILL.md"
         self.assertTrue(swarm_skill.is_file())
-        self.assertTrue((ROOT / "platforms/agy/skills/swarm/SKILL.md").is_file())
+        self.assertTrue((ROOT / "platforms/agy/skills/swarms/SKILL.md").is_file())
+        self.assertFalse((ROOT / "platforms/gemini/skills/swarm").exists())
         skill_text = swarm_skill.read_text()
         self.assertTrue(skill_text.startswith("---\n"))
         skill_fm = skill_text.split("---\n", 2)[1]
-        self.assertIn("name: swarm", skill_fm)
+        self.assertIn("name: swarms", skill_fm)
         self.assertIn("description:", skill_fm)
 
 

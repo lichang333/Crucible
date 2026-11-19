@@ -2,7 +2,7 @@
 
 Read [the shared project conventions](shared/project-conventions.md) when working in this repository.
 
-Antigravity / Gemini entrypoints live in `platforms/gemini/skills/` (`moa`, `auto`, `swarm`)
+Antigravity / Gemini entrypoints live in `platforms/gemini/skills/` (`moa`, `auto`, `swarms`; `/swarm` remains Antigravity's built-in Native Swarm UI)
 and `platforms/gemini/rules/swarm-coordinator.md` (aliased via `platforms/agy/`); OpenCode entrypoints live in `platforms/opencode/skills/` and
 `platforms/opencode/agents/swarm.md`; Cursor entrypoints live in `platforms/cursor/skills/`,
 `platforms/cursor/agents/swarm-coordinator.md`, and `platforms/cursor/rules/swarm-coordinator.mdc`;
@@ -12,11 +12,11 @@ Edit the shared source rather than copying implementations into platform folders
 
 For multi-agent work, the current Antigravity session owns dispatch, subagents and integration.
 Consult `config/gemini.json` and `config/headless.json` (`agy_catalog`) for role choices.
-For `/swarm` and `/auto`, unless the user explicitly
+For `/swarms` and `/auto`, unless the user explicitly
 pins a model, the Coordinator automatically selects task-fit models per worker and cross-family reviewers
 (pairing Gemini 4 / Orchestrator with Claude Opus/Sonnet 5.5 or GPT-OSS 120B) and switches quota/RPM
 buckets automatically on `429` or quota exhaustion without asking the user to pick models. Antigravity
-`/swarm`, `/moa`, and `/auto` sessions can also invoke external/bridged advisors and cross-family reviewers
+`/swarms`, `/moa`, and `/auto` sessions can also invoke external/bridged advisors and cross-family reviewers
 — **`codex` (`GPT-6-Luna (High)` default + `codex-max` / `gpt-6-luna-max` via signed-in ChatGPT/Codex CLI subscription at `$0` API spend, auto-discovering newer `/Applications/ChatGPT.app` bundled `codex` over stale `/opt/homebrew/bin/codex`)**,
 **`grok` (`Grok-4.7` via signed-in OpenCode xAI OAuth only)**,
 **`glm` (`GLM-5.3`)**, **`deepseek` (`DeepSeek-V4-Pro`, plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort)**, **`kimi` (`Kimi-K3.1-Pro` + `kimi-highspeed` & `kimi-max` effort when `MOONSHOT_API_KEY`/`KIMI_API_KEY` is set)**, and **`minimax` (`MiniMax-M3`)** — via

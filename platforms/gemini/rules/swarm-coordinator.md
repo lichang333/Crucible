@@ -1,21 +1,23 @@
 ---
 trigger: always_on
-description: "Default cost-first MoA Swarm coordinator triage across Antigravity (agy) sandbox workers, read-only subagents, and cross-family reviewers without typing /swarm"
+description: "Default cost-first MoA Swarm coordinator triage across Antigravity (agy) sandbox workers, read-only subagents, and cross-family reviewers without typing /swarms"
 ---
 
 # Default Swarm Coordinator Routing (Antigravity / agy)
 
 **Sub-Worker / Subagent Exemption**: If this session is already a delegated `agy_worker.py` worker (`You are a coding worker.` / `TASK BRIEF:` / `FEEDBACK ON YOUR PREVIOUS ATTEMPT` or working directory under `auto-worker/`), a headless `--mode plan` review/advisor call (`auto-review-` / `moa-`), or a spawned subagent (`invoke_subagent` / `<swarm_worker>`), skip Coordinator delegation below and execute your assigned task directly.
 
-Otherwise, triage every incoming user prompt automatically (no `/swarm` prefix needed unless requirements are genuinely ambiguous):
+If the user invokes `/swarm` or asks for Antigravity's native Swarm Board, follow the built-in Swarm skill and end routing here. Its instructions are in `~/.gemini/antigravity/builtin/skills/native_swarm/SKILL.md` or `~/.gemini/antigravity-cli/builtin/skills/native_swarm/SKILL.md`.
+
+Otherwise, triage every incoming user prompt automatically (no `/swarms` prefix needed unless requirements are genuinely ambiguous):
 
 1. **Quick Q&A, explanations, 1–2 small L0 edits, live ops/SSH, or guard/sandbox/control-file edits (`GEMINI.md`, `AGENTS.md`, `.gemini/`, `.agents/`, `hooks.json`)**:
    - Handle directly in the current Antigravity session for immediate response.
 2. **Architecture, trade-offs, or multi-perspective analysis**:
    - Consult `python3 "$HOME/.gemini/config/skills/moa/moa_runner.py" --platform gemini --raw -- '<question>'` (use `--models agy,grok` for `$0` marginal API spend via Google AI Ultra + signed-in OpenCode xAI subscription, or include keyed `glm`, `deepseek`, `deepseek-v4.1`, `kimi`, `kimi-highspeed`, `minimax`) and/or parallel read-only `research` subagents (`invoke_subagent`), then synthesize with codebase evidence.
 3. **Bounded coding (`filler`/`L1`/`L2`) or multi-file features/refactors (inside a git repo)**:
-   - Offload coding to isolated `agy` sandbox workers via `$HOME/.gemini/config/skills/swarm/agy_worker.py` (`--platform gemini`; full runbook in `$HOME/.gemini/config/skills/swarm/SKILL.md`).
-   - For multi-file tasks, split into **2–4 disjoint slices** (`OWNED FILES` non-overlapping) and launch concurrent `agy_worker.py run --platform gemini` workers in one turn. (Only use Antigravity's built-in `swarm` board tool if the user explicitly asks for the native Swarm Board UI.)
+   - Offload coding to isolated `agy` sandbox workers via `$HOME/.gemini/config/skills/swarms/agy_worker.py` (`--platform gemini`; full runbook in `$HOME/.gemini/config/skills/swarms/SKILL.md`).
+   - For multi-file tasks, split into **2–4 disjoint slices** (`OWNED FILES` non-overlapping) and launch concurrent `agy_worker.py run --platform gemini` workers in one turn.
 4. **Automatic Coordinator Model Selection & Failover (never ask the user to pick models)**:
    - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for pure text) — reserve `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
    - Fast L1: `gemini-4-argon-high` / `gemini-4-carbon-medium`
