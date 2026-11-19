@@ -33,6 +33,13 @@ headless behavior.
 it suffices; the legacy default remains all configured providers. Keys are local
 to the shared `skills/moa/.env` or the existing environment/Desktop fallback.
 The `agy` provider executes locally in read-only `--mode plan` via `agy` (default model `gemini-pro-orchestrator`, `Orchestrator (Carbon)`) using the user's Google AI Ultra subscription without requiring an API key.
+Use `--models agy/<model-id>` to choose an entry in the shared `agy_catalog`, including
+Gemini, Claude, and GPT-OSS. A catalog ID also works without the `agy/` prefix. Each
+run has one `agy` slot, which can be combined with other providers. Use `--show-config`
+to preview the selection and `--raw` to collect answers without a separate synthesis call.
+The `grok` provider requires an active OpenCode xAI OAuth login. Use
+`--models grok --raw` or `--models grok --review` for a Grok-only call. These
+commands report login or request failures without switching channels.
 The `codex` provider executes locally in read-only `codex exec --ephemeral -s read-only` (default model `gpt-6-luna-high`, `GPT-6-Luna (High)`) via `CODEX_BIN`, a newer bundled `ChatGPT.app` CLI on macOS, or `PATH` (`~/.codex/auth.json` or `OPENAI_API_KEY`). Inline effort selectors such as `codex-max` or `gpt-6-luna-max` (plus `low`, `medium`, `high`, `xhigh`) map to `codex` and pass `-m gpt-6-luna -c model_reasoning_effort="<tier>"` for that run.
 Do not print keys or copy them into platform directories.
 
@@ -54,7 +61,8 @@ review, announce the additional call and use:
 python3 "$R" --platform codex --review -- '<original question and draft to critique>'
 ```
 
-The reviewer model comes from the profile. Simple questions do not need an extra
+The reviewer model comes from the profile or the explicit `--models` selection.
+Simple questions do not need an extra
 review. User choices such as `--deep`, `--fast` or `--no-deep` guide the coordinator;
 remove these workflow flags before invoking the runner.
 

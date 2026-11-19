@@ -3,10 +3,16 @@
   "mode": "raw",
   "native_roles": {
     "coordinator": "current",
-    "planner": "gpt-6-astra",
-    "reviewer": "gpt-6-astra",
-    "implementer": "gpt-6.1-sol",
+    "planner": "gpt-6.2-astra",
+    "reviewer": "gpt-6.2-astra",
+    "implementer": "gpt-6.2-sol",
     "explorer": "gpt-6-luna"
+  },
+  "swarm": {
+    "implementer": {"executor": "agy", "model": "gemini-pro-orchestrator-neon"},
+    "secondary_implementer": "claude-sonnet-5-5-high",
+    "filler": "gpt-oss-120b-medium",
+    "reviewer": "current"
   },
   "worker_defaults": ["agy", "grok", "glm", "deepseek", "kimi", "minimax"]
 }

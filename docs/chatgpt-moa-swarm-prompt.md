@@ -19,20 +19,23 @@
 【一、真实模型名册与通道事实表（2026.11 最新，严禁编造旧版本或已下线模型）】
 
 1. `$0` 边际 API 成本的订阅 / OAuth 桥接三巨头（均可在脚本中免 API Key 直接并发调用）：
-   - `agy`（Google AI Ultra 订阅，8 大家族共 19 个本地沙箱编码模型；`gemini-3.8` 已彻底退役）：
+   - `agy`（已登录 Google AI Ultra 的官方 Antigravity CLI。共享目录有 11 个家族、27 个模型 ID，用 `agy models` 核对账号实际可用项。MoA 用 `--models agy/<模型 ID>` 点名）：
      * `Orchestrator (Carbon)`：`gemini-pro-orchestrator`（L3 架构、疑难排错、异族代码审查）
      * `Orchestrator (Argon)`：`gemini-pro-orchestrator-argon`（L3 与审查备选）
+     * `Orchestrator (Neon)`：`gemini-pro-orchestrator-neon`（Codex Swarm 核心实现首选）
+     * `Gemini 4 Neon`：`gemini-4-neon-{xhigh,high,medium,low}`
      * `Gemini 4 Carbon`：`gemini-4-carbon-high`（L1/L2 默认主力）、`gemini-4-carbon-medium`、`gemini-4-carbon-low`
      * `Gemini 4 Argon`：`gemini-4-argon-high`（快写 L1）、`gemini-4-argon-medium`（filler 兜底）、`gemini-4-argon-low`（`filler` 默认：Mock 假数据、注释、文案、样板重复代码）
      * `Gemini 4 Hydrogen`：`gemini-4-hydrogen-xhigh`、`gemini-4-hydrogen-high`、`gemini-4-hydrogen-medium`、`gemini-4-hydrogen-low`（深度算法 / 跨文件综合实现）
+     * `Gemini 3.8 Flash`：`gemini-3.8-flash-{high,medium,low}`
      * `Claude Opus 5.5`：`claude-opus-5-5-high` / `-medium` / `-low`（高阶推理与审查）
      * `Claude Sonnet 5.5`：`claude-sonnet-5-5-high` / `-medium` / `-low`（日常编码与审查）
      * `GPT-OSS 120B`：`gpt-oss-120b-medium`（开源权重兜底池，与 Claude 5.5 同属另一独立配额池）
-     * 【配额现状策略】：`agy` 分为 **Gemini 4 / Orchestrator 池** 与 **Claude 5.5 / GPT-OSS 池**。当 Claude 5.5 处于 `429 / quota_exhausted` 冷却期时，不要在日常指令里强绑 `claude-*`，优先使用健康的 Gemini 4 系列或 `gpt-oss-120b-medium`，让故障转移自动生效。
+     * 【配额现状策略】`agy` 将 Gemini 和 Claude / GPT 分开计量。Claude / GPT 池用尽时，优先选择还有额度的 Gemini 模型。
    - `codex`（已登录 ChatGPT App / Codex CLI 订阅，可在 `moa_runner.py` 与 `agy_worker.py review --executor auto|codex` 中 `$0` 自动调用）：
      * 默认：`gpt-6-luna-high`（`GPT-6-Luna (High)`）；深思重审可选 `codex-max` / `gpt-6-luna-max`
      * 【严格纪律】：**绝对不要把 GPT-6-Luna 派去写 CSS、样式、Mock 假数据、重复样板代码等体力活**。它是高价值的跨家族冷眼 Code Review、边界挑刺与高难架构参谋专家。
-   - `grok`（已登录 OpenCode xAI OAuth 订阅，可在脚本中 `$0` 直调，亦可退回 `XAI_API_KEY`）：
+   - `grok`（通过已登录的 OpenCode xAI OAuth 订阅调用）：
      * 模型：`grok-4.7`（`Grok-4.7`），适合架构参谋、文本推理、轻中度审查与兜底。
 
 2. 预付费 API 参谋与 3 级兜底池（密钥统一存放在 `~/code/MoA/skills/moa/.env`，不得绕过宿主私自烧钱）：

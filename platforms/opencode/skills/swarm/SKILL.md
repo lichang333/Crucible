@@ -13,7 +13,7 @@ Your primary optimization goal is **high quality at minimal paid API token cost*
 - **NEVER roleplay workers in prose**: Do not write fake `[Worker 1]` / `[Verifier]` dialogues or simulate outputs. Every parallel stream MUST be a real tool call (`shell` launching `agy_worker.py` / `moa_runner.py`, or OpenCode `subagent`).
 - **NEVER invent tools or parameters**: Use only your active OpenCode schema (`subagent`, `shell`, `read`, `write`, `edit`, `patch`, `glob`, `grep`, `webfetch`, `websearch`, `question`, `execute`, `search`).
 - **NEVER plan-and-pause**: Unless requirements are genuinely ambiguous (use `question` first), state a compact stream table (`Stream | Executor & Model | Owned Paths / Angle`) and launch Wave 1 in the **SAME TURN**.
-- **NEVER ask the user which model to use**: unless the user explicitly specifies a model, you (the Coordinator) **automatically assign the best-fitting model per worker and reviewer** from the 8-family / 19-variant catalog below and fail over across quota pools automatically if `429` or `quota_exhausted` occurs.
+- **NEVER ask the user which model to use**: unless the user explicitly specifies a model, you (the Coordinator) **automatically assign the best-fitting model per worker and reviewer** from the shared agy catalog and fail over across quota pools automatically if `429` or `quota_exhausted` occurs.
 
 ## Choose the Right Worker Pool & Automatic Model Routing
 
@@ -29,18 +29,9 @@ Your primary optimization goal is **high quality at minimal paid API token cost*
      - **3-tier automatic quota / unsubscribed failover**:
        - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
        - **Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted)**: automatically downgrade to the OpenCode native host or scoped native subagents (`general` / `explore`) using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, plus `agy_worker.py review --executor auto` (which fails over at `$0` API spend to ChatGPT-authenticated **`codex`** `gpt-6-luna-high`, auto-preferring newer `/Applications/ChatGPT.app` bundled `codex`, and OpenCode **`grok`**, before `--executor api`; pass `--model codex-max` / `gpt-6-luna-max` for max-effort Codex review).
-       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`; supports `deepseek-v4.1` / `deepseek-max` / `kimi-highspeed` / `kimi-max`); in the OpenCode TUI, switching to another provider or `opencode/glm-5.3-flash-free` continues seamlessly.
+       - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py` `--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`; supports `deepseek-v4.1` / `deepseek-max` / `kimi-highspeed` / `kimi-max`); in the OpenCode TUI, switching to another provider or `opencode/glm-5.3-flash-free` continues seamlessly.
 
-   | Family | Tier | Canonical Model IDs (19 total; `gemini-3.8` retired) |
-   |---|---|---|
-   | Orchestrator (Carbon) | `l3_and_review` | `gemini-pro-orchestrator` |
-   | Orchestrator (Argon) | `l3_and_review` | `gemini-pro-orchestrator-argon` |
-   | Gemini 4 Carbon | `coding` | `gemini-4-carbon-high`, `gemini-4-carbon-medium`, `gemini-4-carbon-low` |
-   | Gemini 4 Argon | `coding_and_fast` | `gemini-4-argon-high`, `gemini-4-argon-medium`, `gemini-4-argon-low` |
-   | Gemini 4 Hydrogen | `deep_coding` | `gemini-4-hydrogen-xhigh`, `gemini-4-hydrogen-high`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-low` |
-   | Claude Opus 5.5 | `l3_and_review` | `claude-opus-5-5-high`, `claude-opus-5-5-medium`, `claude-opus-5-5-low` |
-   | Claude Sonnet 5.5 | `coding_and_review` | `claude-sonnet-5-5-high`, `claude-sonnet-5-5-medium`, `claude-sonnet-5-5-low` |
-   | GPT-OSS 120B | `open_weights_fallback` | `gpt-oss-120b-medium` |
+   See the [shared model catalog](headless.json) for exact IDs. Run `agy models` to check current availability.
 
    - Shorthands and UI display names (e.g., `"Claude Opus 5.5"`, `"Gemini 4 Hydrogen (XHigh)"`, `"Orchestrator (Argon)"`) are auto-resolved by `agy_worker.py`.
    - Every `agy_worker.py run` automatically gets an isolated shallow git clone under `$TMPDIR/auto-worker/<id>`, `agy_guard.py` default-deny enforcement (`.opencode`, `.git`, secrets protected), and macOS `sandbox.sb` execution.

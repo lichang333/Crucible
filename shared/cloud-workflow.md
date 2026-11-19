@@ -12,7 +12,7 @@ Follow the user's current subscription-first preference and `auto_funding`: pref
 available included subscription allowance for suitable tasks, then eligible
 authorized cloud credits, then explicitly authorized existing prepaid API balances.
 An explicit task-specific funding choice takes precedence. Do not invoke multiple
-APIs just because their keys exist. Grok, GLM, DeepSeek (DeepSeek-V4-Pro / DeepSeek-V4.1-Flash), Kimi (Kimi-K3.1-Pro / kimi-highspeed), and MiniMax are API
+APIs just because their keys exist. GLM, DeepSeek (DeepSeek-V4-Pro / DeepSeek-V4.1-Flash), Kimi (Kimi-K3.1-Pro / kimi-highspeed), and MiniMax are API
 candidates for analysis/review, not coding executors in this bridge. Different channels use different pools:
 
 - Claude cloud credits apply to ordinary Cloud sessions; Projects, Routines,

@@ -22,6 +22,7 @@ spec = importlib.util.spec_from_file_location("moa_runner", Path(__file__).resol
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 _REAL_LOAD_ENV = runner.load_env
+_REAL_HAS_OPENCODE_XAI_AUTH = runner.has_opencode_xai_auth
 
 
 class RunnerTests(unittest.TestCase):
@@ -31,6 +32,7 @@ class RunnerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.enterContext(patch.object(runner, "RUNS_DIR", self.root / "runs"))
         self.env_loader = self.enterContext(patch.object(runner, "load_env"))
+        self.grok_oauth = self.enterContext(patch.object(runner, "has_opencode_xai_auth", return_value=False))
         self.enterContext(patch.dict(os.environ, {}, clear=True))
         self.network = self.enterContext(patch.object(runner.urllib.request, "urlopen",
                                                       side_effect=AssertionError("Network forbidden in offline tests")))
@@ -59,7 +61,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(codex["mode"], "raw")
         self.assertEqual(claude["mode"], "raw")
         self.assertEqual(headless["providers"], codex["providers"])
-        self.assertEqual(codex["native_roles"]["planner"], "gpt-6-astra")
+        self.assertEqual(codex["native_roles"]["planner"], "gpt-6.2-astra")
         self.assertEqual(codex["agy_routes"]["l1"], claude["agy_routes"]["l1"])
         self.assertEqual(headless["reviewer"]["model"], "glm-5.3")
         self.assertEqual(headless["providers"]["codex"], {"model": "gpt-6-luna-high", "display_name": "GPT-6-Luna (High)"})
@@ -68,7 +70,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(headless["providers"]["deepseek-flash"], {"model": "deepseek-flash", "display_name": "DeepSeek-V4.1-Flash"})
         self.assertEqual(headless["providers"]["kimi"], {"model": "kimi-k3.1-pro", "display_name": "Kimi-K3.1-Pro"})
         self.assertEqual(headless["agy_routes"]["filler"], "gemini-4-argon-low")
-        self.assertEqual(headless["api_advisors"]["providers"], ["grok", "glm", "deepseek", "deepseek-flash", "kimi", "minimax"])
+        self.assertEqual(headless["api_advisors"]["providers"], ["glm", "deepseek", "deepseek-flash", "kimi", "minimax"])
         self.assertEqual(headless["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "kimi", "minimax"])
         self.assertEqual(headless["aggregation_priority"], ["agy", "codex", "grok", "deepseek", "deepseek-flash", "glm", "kimi", "minimax"])
         self.assertEqual(codex["worker_defaults"], ["agy", "grok", "glm", "deepseek", "kimi", "minimax"])
@@ -127,6 +129,51 @@ class RunnerTests(unittest.TestCase):
                     runner.main(["--models", value, "--dry-run"])
                 self.assertEqual(stopped.exception.code, 2)
         self.env_loader.assert_not_called()
+        self.network.assert_not_called()
+
+    def test_agy_models_in_catalog_can_be_selected_by_exact_id(self):
+        profile = runner.load_config("codex")
+        models = [model for family in profile["agy_catalog"] for model in family["models"]]
+        for model in models:
+            for selector in (f"agy/{model}", model):
+                with self.subTest(selector=selector):
+                    code, stdout, stderr, call = self.invoke(["--show-config", "--platform", "codex",
+                                                               "--models", selector])
+                    self.assertEqual(code, 0, stderr)
+                    worker, = json.loads(stdout)["selected_workers"]
+                    self.assertEqual((worker["provider"], worker["model"]), ("agy", model))
+                    call.assert_not_called()
+        self.env_loader.assert_not_called()
+        self.network.assert_not_called()
+
+    def test_agy_model_selection_rejects_unknown_or_conflicting_models(self):
+        for selector, message in (
+            ("agy/nonexistent-model", "Unknown agy model"),
+            ("agy/gemini-4-neon-high,agy/gemini-4-neon-medium", "Select one agy model per run"),
+        ):
+            with self.subTest(selector=selector), redirect_stderr(io.StringIO()) as stderr:
+                with self.assertRaises(SystemExit) as stopped:
+                    runner.main(["--models", selector, "--show-config"])
+                self.assertEqual(stopped.exception.code, 2)
+                self.assertIn(message, stderr.getvalue())
+
+    def test_explicit_agy_model_is_passed_to_the_local_cli(self):
+        os.environ.update(AGY_CLI="installed", GEMINI_API_KEY="must-stay-out-of-environment")
+        proc = subprocess.CompletedProcess([], 0, stdout='{"status":"SUCCESS","response":"hello"}')
+        with patch.object(runner, "agy_executable", return_value="/usr/local/bin/agy"), \
+                patch.object(runner.shutil, "which", return_value=None), \
+                patch.object(runner.subprocess, "run", return_value=proc) as called, \
+                redirect_stdout(io.StringIO()) as stdout, redirect_stderr(io.StringIO()):
+            code = runner.main(["--raw", "--models", "agy/gpt-oss-120b-medium", "question"])
+
+        self.assertEqual(code, 0)
+        called.assert_called_once()
+        command = called.call_args.args[0]
+        self.assertEqual(command[command.index("--model") + 1], "gpt-oss-120b-medium")
+        self.assertEqual(command[command.index("--mode") + 1], "plan")
+        self.assertNotIn("GEMINI_API_KEY", called.call_args.kwargs["env"])
+        self.assertEqual(self.raw_response(stdout.getvalue()), {"GPT-OSS 120B (Medium)": "hello"})
+        self.assertEqual(self.record()["worker_results"]["agy"]["executor"], "agy")
         self.network.assert_not_called()
 
     def test_mixed_failure_is_excluded_from_raw_and_recorded(self):
@@ -270,7 +317,7 @@ class RunnerTests(unittest.TestCase):
         process = subprocess.run([sys.executable, str(link), "--platform", "codex", "--dry-run"],
                                  capture_output=True, text=True, env={})
         self.assertEqual(process.returncode, 0, process.stderr)
-        self.assertEqual(json.loads(process.stdout)["native_roles"]["planner"], "gpt-6-astra")
+        self.assertEqual(json.loads(process.stdout)["native_roles"]["planner"], "gpt-6.2-astra")
 
     def test_platform_entrypoints_infer_raw_without_platform_argument(self):
         repo = runner.SKILL_DIR.parent.parent
@@ -329,7 +376,7 @@ class RunnerTests(unittest.TestCase):
             "gemini": {"model": "synthetic-gemini"},
         })
         for provider, settings in providers.items():
-            if provider in ("agy", "codex"):
+            if provider in ("agy", "codex", "grok"):
                 continue
             with self.subTest(provider=provider):
                 if provider == "gemini":
@@ -724,30 +771,38 @@ class RunnerTests(unittest.TestCase):
         db_dir.mkdir(parents=True)
         db_path = db_dir / "opencode.db"
         conn = sqlite3.connect(db_path)
-        conn.execute("CREATE TABLE credential (id TEXT, integration_id TEXT, active INTEGER)")
-        conn.execute("INSERT INTO credential VALUES ('c1', 'xai', 0)")
+        conn.execute("CREATE TABLE credential (id TEXT, integration_id TEXT, active INTEGER, value TEXT)")
+        conn.execute("INSERT INTO credential VALUES ('c1', 'xai', 0, ?)", ('{"type":"oauth"}',))
         conn.commit()
         conn.close()
 
         os.environ["XDG_DATA_HOME"] = str(xdg_data)
         with patch.object(runner, "opencode_executable", return_value="/usr/local/bin/opencode"):
-            self.assertFalse(runner.has_opencode_xai_auth())
+            self.assertFalse(_REAL_HAS_OPENCODE_XAI_AUTH())
             conn = sqlite3.connect(db_path)
             conn.execute("UPDATE credential SET active = 1 WHERE id = 'c1'")
             conn.commit()
+            self.assertTrue(_REAL_HAS_OPENCODE_XAI_AUTH())
+            conn.execute("INSERT INTO credential VALUES ('c2', 'xai', 1, ?)", ('{"type":"key"}',))
+            conn.commit()
+            self.assertFalse(_REAL_HAS_OPENCODE_XAI_AUTH())
+            conn.execute("UPDATE credential SET active = 0 WHERE id = 'c1'")
+            conn.commit()
             conn.close()
-            self.assertTrue(runner.has_opencode_xai_auth())
+            self.assertFalse(_REAL_HAS_OPENCODE_XAI_AUTH())
 
         with patch.object(runner, "opencode_executable", return_value=None):
-            self.assertFalse(runner.has_opencode_xai_auth())
+            self.assertFalse(_REAL_HAS_OPENCODE_XAI_AUTH())
 
-    def test_grok_opencode_oauth_adapter_and_http_fallback_without_network(self):
+    def test_grok_opencode_oauth_adapter_ignores_api_keys(self):
         settings = runner.load_config("headless")["providers"]["grok"]
         self.assertEqual(settings["model"], "grok-4.7")
         self.assertEqual(settings["display_name"], "Grok-4.7")
+        self.grok_oauth.return_value = True
 
         def fake_run(cmd, cwd=None, env=None, text=True, capture_output=True, timeout=None):
-            self.assertEqual(cmd[:7], ["/usr/local/bin/opencode", "run", "--archived", "--agent", "plan", "--format", "json"])
+            self.assertEqual(cmd[:8], ["/usr/local/bin/opencode", "run", "--standalone", "--archived",
+                                      "--agent", "plan", "--format", "json"])
             self.assertEqual(cmd[cmd.index("-m") + 1], "xai/grok-4.7")
             self.assertIn("--", cmd)
             prompt_arg = cmd[-1]
@@ -755,6 +810,8 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("question", prompt_arg)
             self.assertTrue(cwd and Path(cwd).is_dir())
             self.assertNotIn("DEEPSEEK_API_KEY", env)
+            self.assertNotIn("XAI_API_KEY", env)
+            self.assertNotIn("GROK_API_KEY", env)
             events = [
                 json.dumps({"type": "step_start"}),
                 json.dumps({"type": "text", "part": {"type": "text", "text": "grok subscription answer"}}),
@@ -762,7 +819,7 @@ class RunnerTests(unittest.TestCase):
             ]
             return subprocess.CompletedProcess(cmd, 0, stdout="\n".join(events) + "\n", stderr="")
 
-        os.environ["DEEPSEEK_API_KEY"] = "secret-must-not-leak"
+        os.environ.update(DEEPSEEK_API_KEY="synthetic-ds", XAI_API_KEY="synthetic-xai", GROK_API_KEY="synthetic-grok")
         with patch.object(runner, "opencode_executable", return_value="/usr/local/bin/opencode"), \
                 patch.object(runner.subprocess, "run", side_effect=fake_run) as mock_sub:
             answer = runner.call_model("grok", "question", "opencode-oauth", settings["model"],
@@ -771,23 +828,45 @@ class RunnerTests(unittest.TestCase):
             mock_sub.assert_called_once()
             self.network.assert_not_called()
 
-        # When opencode subscription call fails and XAI_API_KEY is present, fall back to direct xAI HTTP API.
-        os.environ["XAI_API_KEY"] = "synthetic-xai-key"
-        self.network.side_effect = None
-        self.network.return_value = io.BytesIO(b'{"choices":[{"message":{"content":"grok http fallback"}}]}')
+    def test_grok_oauth_failure_never_falls_back_to_http(self):
+        self.grok_oauth.return_value = True
+        os.environ.update(XAI_API_KEY="synthetic-xai", GROK_API_KEY="synthetic-grok")
         fail_proc = subprocess.CompletedProcess(["opencode"], 1, stdout="", stderr="oauth expired")
         with patch.object(runner, "opencode_executable", return_value="/usr/local/bin/opencode"), \
-                patch.object(runner.subprocess, "run", return_value=fail_proc):
-            answer = runner.call_model("grok", "question", "opencode-oauth", "xai/grok-4.7",
-                                       system_prompt=runner.WORKER_RULES)
-            self.assertEqual(answer, "grok http fallback")
-            req = self.network.call_args.args[0]
-            self.assertEqual(req.full_url, runner.ENDPOINTS["grok"])
-            self.assertEqual(req.get_header("Authorization"), "Bearer synthetic-xai-key")
-            payload = json.loads(req.data)
-            self.assertEqual(payload["model"], "grok-4.7")
+                patch.object(runner.subprocess, "run", return_value=fail_proc) as mock_sub:
+            with self.assertRaisesRegex(RuntimeError, "oauth expired"):
+                runner.call_model("grok", "question", runner.GROK_OAUTH, "xai/grok-4.7")
+        mock_sub.assert_called_once()
+        self.network.assert_not_called()
+
+    def test_grok_without_oauth_rejects_api_keys_and_unverified_marker(self):
+        os.environ.update(XAI_API_KEY="synthetic-xai", GROK_API_KEY="synthetic-grok",
+                          OPENCODE_XAI_AUTH=runner.GROK_OAUTH, ZHIPUAI_API_KEY="synthetic-glm")
+        for mode in ("--raw", "--review"):
+            with self.subTest(mode=mode):
+                code, _, stderr, call = self.invoke([mode, "--models", "grok", "question"])
+                self.assertNotEqual(code, 0)
+                self.assertIn(runner.GROK_LOGIN_REQUIRED, stderr)
+                call.assert_not_called()
+        with self.assertRaisesRegex(ValueError, "OpenCode xAI OAuth"):
+            runner.call_model("grok", "question", "synthetic-xai", "grok-4.7")
+        with self.assertRaisesRegex(RuntimeError, "OpenCode xAI OAuth"):
+            runner.call_model("grok", "question", runner.GROK_OAUTH, "grok-4.7")
+        self.network.assert_not_called()
+
+    def test_explicit_grok_review_does_not_switch_to_another_provider(self):
+        self.grok_oauth.return_value = True
+        os.environ["ZHIPUAI_API_KEY"] = "synthetic-glm"
+        code, _, stderr, call = self.invoke(["--review", "--models", "grok", "draft"],
+                                            side_effect=RuntimeError("OAuth expired"))
+        self.assertNotEqual(code, 0)
+        self.assertIn("OAuth expired", stderr)
+        call.assert_called_once()
+        self.assertEqual(call.call_args.args[0], "grok")
+        self.assertEqual(self.record()["reviewer_result"]["executor"], "opencode")
 
     def test_explicit_timeout_overrides_grok_cli_minimum(self):
+        self.grok_oauth.return_value = True
         events = [
             json.dumps({"type": "text", "part": {"type": "text", "text": "PONG"}}),
         ]
@@ -799,7 +878,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(mock_sub.call_args.kwargs["timeout"], 35)
 
     def test_doctor_command_probes_providers_and_reports_table(self):
-        os.environ.update(OPENCODE_XAI_AUTH="opencode-oauth", DEEPSEEK_API_KEY="synthetic-key")
+        self.grok_oauth.return_value = True
+        os.environ["DEEPSEEK_API_KEY"] = "synthetic-key"
         recorded = {}
 
         def probe(provider, prompt, api_key, model, system_prompt=None, max_tokens=None, timeout=None):

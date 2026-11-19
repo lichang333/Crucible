@@ -1,5 +1,5 @@
 ---
-description: Cost-first Swarm coordinator (default). Automatically triages prompts without typing /swarm, selects optimal models per worker and cross-family verifier across all 8 Google AI Ultra (agy) families (19 variants), and verifies in sandbox.
+description: Cost-first Swarm coordinator (default). Automatically triages prompts without typing /swarm, selects optimal models per worker and cross-family verifier from the shared Google AI Ultra (agy) catalog, and verifies in sandbox.
 mode: primary
 color: accent
 ---
@@ -26,7 +26,7 @@ Classify every incoming prompt immediately without asking how to proceed unless 
 - **Never plan-and-pause**: once scope is clear, dispatch Wave 1 in the same turn.
 
 ## 3. Automatic Coordinator Model Selection (Never Ask User Which Model to Use)
-Unless the user explicitly requests a specific model, **you decide and pass `--model` automatically** for every worker and reviewer across the active **8 families / 19 variants** (run `python3 "$HOME/.config/opencode/skills/swarm/agy_worker.py" models` anytime):
+Unless the user explicitly requests a specific model, **you decide and pass `--model` automatically** for every worker and reviewer from the shared `agy_catalog` (run `python3 "$HOME/.config/opencode/skills/swarm/agy_worker.py" models` anytime):
 
 | Task / Slice Profile | Coordinator Auto-Selected Model |
 |---|---|
@@ -40,18 +40,10 @@ Unless the user explicitly requests a specific model, **you decide and pass `--m
 ### 3-Tier Automatic Quota & Unsubscribed Failover (`429` / Exhaustion / Expired Keys)
 - **Tier 1 (`agy` dual quota pools)**: Google AI Ultra separates quotas across **Gemini 4 / Orchestrator** vs. **Claude 5.5 / GPT-OSS 120B**. On `quota_exhausted` or persistent `429`, **preserve partial `diff.patch`** and automatically reassign remaining coding or `resume` / `review` work to the other pool (including `gpt-oss-120b-medium`) without asking the user to pick models.
 - **Tier 2 (`agy` pools exhausted)**: automatically downgrade to the OpenCode native host or scoped `subagent(agent="general")` / `explore` using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, and run `agy_worker.py review --executor auto` (auto-falls back across `agy` pools -> ChatGPT `codex` -> `grok` / `--executor api`) or `--executor api`.
-- **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py`) `--review` & `aggregate` and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`). In the OpenCode TUI, switch to another healthy configured provider or `opencode/glm-5.3-flash-free` to continue seamlessly.
+- **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py`) `--review` & `aggregate` and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`). In the OpenCode TUI, switch to another healthy configured provider or `opencode/glm-5.3-flash-free` to continue seamlessly.
 
-### Full Active `agy` Model Catalog (8 Families / 19 Variants; `gemini-3.8` Excluded)
-`agy_worker.py` accepts canonical IDs and UI display names / shorthands (e.g., `"Claude Opus 5.5"`, `"Gemini 4 Hydrogen (XHigh)"`, `"Orchestrator (Argon)"`):
-- **Orchestrator (Carbon)**: `gemini-pro-orchestrator`
-- **Orchestrator (Argon)**: `gemini-pro-orchestrator-argon`
-- **Gemini 4 Carbon**: `gemini-4-carbon-high`, `gemini-4-carbon-medium`, `gemini-4-carbon-low`
-- **Gemini 4 Argon**: `gemini-4-argon-high`, `gemini-4-argon-medium`, `gemini-4-argon-low`
-- **Gemini 4 Hydrogen**: `gemini-4-hydrogen-xhigh`, `gemini-4-hydrogen-high`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-low`
-- **Claude Opus 5.5**: `claude-opus-5-5-high`, `claude-opus-5-5-medium`, `claude-opus-5-5-low`
-- **Claude Sonnet 5.5**: `claude-sonnet-5-5-high`, `claude-sonnet-5-5-medium`, `claude-sonnet-5-5-low`
-- **GPT-OSS 120B**: `gpt-oss-120b-medium`
+### Model IDs
+`agy_worker.py models --live` shows the shared catalog and current availability. `--model` accepts canonical IDs and catalog display names.
 
 ## 4. Mandatory Cold-Eyes Review, Sandbox Verification & Integration
 ```bash

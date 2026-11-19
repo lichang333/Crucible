@@ -15,7 +15,7 @@ The current Cursor session is the coordinator and final synthesizer. Read [the s
 - **Zero-API-cost single consult**: pass `--models agy` (or `--models agy,codex,grok`) when you only want opinions without spending prepaid API tokens.
 - **3-Tier Automatic Failover**:
   - **Tier 1 (`agy` dual pools)** & **Tier 2 (`agy` unsubscribed/uninstalled/exhausted)**: `agy_worker.py review --executor auto` fails over across Gemini 4 / Orchestrator and Claude 5.5 / `gpt-oss-120b-medium`, then ChatGPT `codex` (`gpt-6-luna-high`) / `grok`, then `--executor api`; coding downgrades to the Cursor native host or scoped subagents (`zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`).
-  - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `moa_runner.py` (`--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`).
+  - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `moa_runner.py` (`--review` & `aggregate`) and `agy_worker.py review --executor api` automatically fail over across remaining keyed providers (`deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`).
 
 ## Operating steps
 1. Verify the user supplied a prompt (if not, ask directly or use Cursor's question tool). Strip workflow-only flags (`--deep`, `--fast`, `--no-deep`) before passing the prompt to the script.

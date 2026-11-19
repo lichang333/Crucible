@@ -456,11 +456,14 @@ worker.main()
     # 14. Active agy catalog (`models`), profile loading via symlink, and model alias resolution.
     r = sh(*W, "models", "--json", check=False)
     cat = json.loads(r.stdout) if r.returncode == 0 else {}
-    check("models --json returns 8 families and 19 models with filler route and zero gemini-3.8 entries",
+    new_gemini = {"gemini-pro-orchestrator-neon", "gemini-4-neon-xhigh",
+                  "gemini-4-neon-high", "gemini-4-neon-medium", "gemini-4-neon-low",
+                  "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low"}
+    check("models --json includes all new Gemini IDs and preserves default routes",
           r.returncode == 0
-          and len(cat.get("families", [])) == 8
-          and len(cat.get("models", [])) == 19
-          and "gemini-3.8" not in r.stdout
+          and len(cat.get("families", [])) == 11
+          and len(cat.get("models", [])) == 27
+          and new_gemini <= set(cat.get("models", []))
           and "live_models" not in cat
           and set(cat.get("agy_alternatives", {})) >= {"filler", "l1", "l2", "l3", "review"}
           and cat.get("agy_routes", {}).get("filler") == "gemini-4-argon-low"
@@ -472,13 +475,13 @@ worker.main()
     r = sh(sys.executable, entry, "models", "--json", check=False)
     sym_cat = json.loads(r.stdout) if r.returncode == 0 else {}
     check("models --json resolves headless.json beside a symlinked platform entrypoint",
-          r.returncode == 0 and len(sym_cat.get("families", [])) == 8 and len(sym_cat.get("models", [])) == 19,
+          r.returncode == 0 and sym_cat == cat,
           r.stderr + r.stdout[:300])
 
     r = sh(*W, "models", check=False)
-    check("models human-readable table lists active catalog without gemini-3.8",
-          r.returncode == 0 and "8 families, 19 models" in r.stdout
-          and "gemini-pro-orchestrator" in r.stdout and "gemini-3.8" not in r.stdout,
+    check("models human-readable table includes all catalog model IDs",
+          r.returncode == 0 and "11 families, 27 models" in r.stdout
+          and all(model in r.stdout for model in cat.get("models", [])),
           r.stderr + r.stdout[:300])
 
     with open(os.path.join(FAKE, "agy"), "w") as f:
@@ -486,6 +489,7 @@ worker.main()
                 "if [ \"$1\" = \"models\" ]; then\n"
                 "  printf '\\r⠋ Fetching available models...\\rgemini-4-carbon-high         Gemini 4 Carbon (High)\\n"
                 "gemini-pro-orchestrator      Orchestrator (Carbon)\\n"
+                "gemini-pro-orchestrator-neon Orchestrator (Neon)\\n"
                 "extra-future-model           Extra Future\\n'\n"
                 "  exit 0\n"
                 "fi\n"
@@ -499,6 +503,7 @@ worker.main()
           r.returncode == 0
           and live_by_id.get("gemini-4-carbon-high", {}).get("in_catalog") is True
           and live_by_id.get("gemini-pro-orchestrator", {}).get("in_catalog") is True
+          and live_by_id.get("gemini-pro-orchestrator-neon", {}).get("in_catalog") is True
           and live_by_id.get("extra-future-model", {}).get("in_catalog") is False
           and "Fetching" not in live_by_id,
           r.stderr + r.stdout[:300])
@@ -510,6 +515,16 @@ worker.main()
         "Orchestrator (Carbon)": "gemini-pro-orchestrator",
         "orchestrator": "gemini-pro-orchestrator",
         "Orchestrator (Argon)": "gemini-pro-orchestrator-argon",
+        "Orchestrator (Neon)": "gemini-pro-orchestrator-neon",
+        "neon orchestrator": "gemini-pro-orchestrator-neon",
+        "Gemini 4 Neon": "gemini-4-neon-high",
+        "Gemini 4 Neon (XHigh)": "gemini-4-neon-xhigh",
+        "Gemini 4 Neon (High)": "gemini-4-neon-high",
+        "Gemini 4 Neon (Medium)": "gemini-4-neon-medium",
+        "Gemini 4 Neon (Low)": "gemini-4-neon-low",
+        "Gemini 3.8 Flash (High)": "gemini-3.8-flash-high",
+        "Gemini 3.8 Flash (Medium)": "gemini-3.8-flash-medium",
+        "Gemini 3.8 Flash (Low)": "gemini-3.8-flash-low",
         "Gemini 4 Carbon": "gemini-4-carbon-high",
         "Gemini 4 Carbon (High)": "gemini-4-carbon-high",
         "Gemini 4 Carbon (Medium)": "gemini-4-carbon-medium",
@@ -538,7 +553,7 @@ worker.main()
     }
     bad_aliases = {k: (v, worker_mod.resolve_agy_model(k))
                    for k, v in expected_aliases.items() if worker_mod.resolve_agy_model(k) != v}
-    check("resolve_agy_model maps all 8 families / 19 variants and passes unknown names through",
+    check("resolve_agy_model maps model display names and passes unknown names through",
           not bad_aliases, json.dumps(bad_aliases))
 
     rev_args = os.path.join(TMP, "review_args.txt")
@@ -660,7 +675,7 @@ worker.main()
 
     r_nokey = sh(*W, "review", rid, "--executor", "api", "--json", check=False, env=base_api_env)
     check("review --executor api refuses cleanly when no API keys are configured",
-          r_nokey.returncode != 0 and "REFUSED: api review requires at least one configured key" in r_nokey.stderr,
+          r_nokey.returncode != 0 and "REFUSED: review requires OpenCode xAI OAuth or a key" in r_nokey.stderr,
           r_nokey.stderr)
 
     env_api_ok = dict(base_api_env,
@@ -730,22 +745,33 @@ worker.main()
           and "402" in api_fo_saved["fallbacks"][0].get("error", ""),
           r_api_fo.stderr + r_api_fo.stdout)
 
-    if os.path.exists(api_review_path):
-        os.unlink(api_review_path)
+    opencode_review_path = os.path.join(DIR, "runs", rid, "opencode_review.json")
     env_grok_ok = dict(base_api_env,
                        MOCK_GROK_KEY="opencode-oauth",
                        MOCK_API_BEHAVIOR=json.dumps({
                            "grok": {"status": "success", "response": "Review Verdict: Acceptable (grok-4.7)"}
                        }))
     r_grok_ok = sh(*W, "review", rid, "--model", "grok", "--json", check=False, env=env_grok_ok)
-    grok_saved = json.load(open(api_review_path)) if os.path.isfile(api_review_path) else {}
-    check("review --model grok routes to api executor and Grok-4.7 without network",
+    grok_saved = json.load(open(opencode_review_path)) if os.path.isfile(opencode_review_path) else {}
+    check("review --model grok records OpenCode OAuth and Grok-4.7",
           r_grok_ok.returncode == 0
-          and grok_saved.get("executor") == "api"
+          and grok_saved.get("executor") == "opencode"
           and grok_saved.get("provider") == "grok"
           and grok_saved.get("model") == "grok-4.7"
           and "Acceptable (grok-4.7)" in grok_saved.get("review", ""),
           r_grok_ok.stderr + r_grok_ok.stdout)
+
+    env_grok_failed = dict(base_api_env, MOCK_GROK_KEY="opencode-oauth", MOCK_GLM_KEY="k-glm",
+                           MOCK_API_BEHAVIOR=json.dumps({
+                               "grok": {"status": "failed", "error": "OAuth expired"},
+                               "glm": {"status": "success", "response": "Unexpected API fallback"},
+                           }))
+    r_grok_failed = sh(*W, "review", rid, "--executor", "auto", "--model", "grok", "--json",
+                       check=False, env=env_grok_failed)
+    check("Explicit Grok OAuth failure stops even with a working API alternative",
+          r_grok_failed.returncode != 0 and "Grok OAuth review failed" in r_grok_failed.stderr
+          and "OAuth expired" in r_grok_failed.stderr and not r_grok_failed.stdout,
+          r_grok_failed.stderr + r_grok_failed.stdout)
 
     auto_agy_calls = os.path.join(TMP, "auto_agy_calls.txt")
     with open(os.path.join(FAKE, "agy"), "w") as f:
