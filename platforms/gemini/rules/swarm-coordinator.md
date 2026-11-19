@@ -26,6 +26,6 @@ Otherwise, triage every incoming user prompt automatically (no `/swarm` prefix n
    - **3-tier automatic failover**:
      - Tier 1 (`agy` dual pools): on `429` or `quota_exhausted`, preserve partial `diff.patch` and fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / `gpt-oss-120b-medium`**.
      - Tier 2 (`agy` pools exhausted): fail over `review --executor auto` to bridged `grok` (`Grok-4.7` via signed-in OpenCode xAI subscription at `$0` API spend) or keyed APIs, and fall back to scoped host/Claude-local execution if needed.
-     - Tier 3 (prepaid API balance exhausted or key expired): `moa_runner.py` (`--review` / `aggregate`) and `agy_worker.py review --executor api` fail over across remaining healthy providers (`grok` -> `deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`).
+     - Tier 3 (prepaid API balance exhausted or key expired): `moa_runner.py` (`--review` / `aggregate`) and `agy_worker.py review --executor api` fail over across remaining healthy providers (`deepseek` -> `deepseek-flash` -> `glm` -> `kimi` -> `minimax`).
 5. **Mandatory Verification Before Apply**:
    - Inspect `diff.patch` & `REVIEW_FLAGS` (`.gemini`, `.agents`, `.git`, secrets protected), run `review --executor auto`, `verify --full -- <test-cmd>`, `apply --sha`, and include **模型调用说明**.

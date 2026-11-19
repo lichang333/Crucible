@@ -25,9 +25,12 @@ from datetime import datetime, timezone
 SKILL_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = SKILL_DIR.parent.parent / "config"
 RUNS_DIR = SKILL_DIR / "runs"
+GROK_OAUTH = "opencode-oauth"
+GROK_LOGIN_REQUIRED = "Grok requires an active OpenCode xAI OAuth login."
+EXTERNAL_CLI_EXECUTORS = {"agy": "agy", "grok": "opencode"}
 KEY_NAMES = {
     "agy": ("AGY_CLI", "AGY_AUTH"),
-    "grok": ("OPENCODE_XAI_AUTH", "XAI_API_KEY", "GROK_API_KEY"),
+    "grok": (),
     "openai": ("OPENAI_API_KEY",),
     "anthropic": ("ANTHROPIC_API_KEY",),
     "glm": ("ZHIPUAI_API_KEY", "ZHIPU_API_KEY"),
@@ -47,7 +50,6 @@ DEEPSEEK_EFFORT_TIERS = ("low", "high", "max")
 KIMI_EFFORT_TIERS = ("low", "high", "max")
 
 ENDPOINTS = {
-    "grok": "https://api.x.ai/v1/chat/completions",
     "openai": "https://api.openai.com/v1/chat/completions",
     "anthropic": "https://api.anthropic.com/v1/messages",
     "glm": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
@@ -250,10 +252,24 @@ def parse_kimi_model_spec(spec):
     return (None, stripped, None, stripped, stripped)
 
 
-def resolve_model_token(token, providers_cfg):
+def resolve_model_token(token, providers_cfg, agy_catalog=()):
     clean = token.strip() if isinstance(token, str) else ""
     if clean in providers_cfg and clean in KEY_NAMES:
         return clean, dict(providers_cfg[clean])
+    prefix, separator, custom_model = clean.partition("/")
+    has_agy_prefix = separator and prefix.strip().lower() == "agy"
+    if "agy" in providers_cfg and (has_agy_prefix or not separator):
+        model = (custom_model if has_agy_prefix else clean).strip().lower()
+        for family in agy_catalog:
+            if model in family.get("models", []):
+                effort = model.rsplit("-", 1)[-1]
+                efforts = {"low": "Low", "medium": "Medium", "high": "High", "xhigh": "XHigh"}
+                display = family["family"]
+                if effort in efforts:
+                    display = f"{display} ({efforts[effort]})"
+                return "agy", {**providers_cfg["agy"], "model": model, "display_name": display}
+        if has_agy_prefix:
+            raise ValueError(f"Unknown agy model: {model or '(empty)'}; use an ID in agy_catalog")
     if "codex" in providers_cfg:
         tiers = "|".join(CODEX_EFFORT_TIERS)
         match = re.match(rf"^(?:codex|luna|gpt-6-luna)(?:[-:]({tiers}))?$", clean, re.IGNORECASE)
@@ -274,8 +290,7 @@ def resolve_model_token(token, providers_cfg):
     kimi_prov, _, _, kimi_canonical, kimi_display = parse_kimi_model_spec(clean)
     if kimi_prov and kimi_prov in providers_cfg:
         return kimi_prov, {"model": kimi_canonical, "display_name": kimi_display}
-    if "/" in clean:
-        prefix, custom_model = clean.split("/", 1)
+    if separator:
         custom_model = custom_model.strip()
         prefix_low = prefix.strip().lower()
         if prefix_low == "deepseek" and custom_model and "deepseek" in providers_cfg:
@@ -297,6 +312,7 @@ def opencode_executable():
 
 
 def has_opencode_xai_auth():
+    """Check that OpenCode has exactly one active xAI credential and it is OAuth."""
     if not opencode_executable():
         return False
     xdg_data = os.environ.get("XDG_DATA_HOME")
@@ -308,10 +324,12 @@ def has_opencode_xai_auth():
     try:
         uri = f"{db_path.resolve().as_uri()}?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=1.0)
-        row = conn.execute(
-            "SELECT 1 FROM credential WHERE integration_id = 'xai' AND active = 1 LIMIT 1"
-        ).fetchone()
-        return row is not None
+        auth_types = conn.execute("""
+            SELECT CASE WHEN json_valid(value) THEN json_extract(value, '$.type') END
+            FROM credential
+            WHERE integration_id = 'xai' AND active = 1
+        """).fetchall()
+        return auth_types == [("oauth",)]
     except (OSError, ValueError, sqlite3.Error):
         return False
     finally:
@@ -337,20 +355,88 @@ def load_env():
                         os.environ[key] = value
     if agy_executable() and not os.environ.get("AGY_CLI"):
         os.environ["AGY_CLI"] = "installed"
-    if has_opencode_xai_auth() and not os.environ.get("OPENCODE_XAI_AUTH"):
-        os.environ["OPENCODE_XAI_AUTH"] = "opencode-oauth"
     if codex_executable() and has_codex_auth() and not os.environ.get("CODEX_CLI"):
         os.environ["CODEX_CLI"] = "installed"
 
 
 def provider_key(provider):
+    if provider == "grok":
+        return GROK_OAUTH if has_opencode_xai_auth() else None
     return next((os.environ[name] for name in KEY_NAMES[provider] if os.environ.get(name)), None)
+
+
+def call_opencode_grok(prompt, model, system_prompt, timeout):
+    oc_bin = opencode_executable()
+    if not oc_bin or not has_opencode_xai_auth():
+        raise RuntimeError(GROK_LOGIN_REQUIRED)
+    target_model = model or "grok-4.7"
+    if "/" not in target_model:
+        target_model = f"xai/{target_model}"
+    if not target_model.startswith("xai/"):
+        raise ValueError("Grok's OpenCode route requires an xai/ model.")
+    full_prompt = (f"<system_instructions>\n{system_prompt}\n</system_instructions>\n\n{prompt}"
+                   if system_prompt else prompt)
+    eff_timeout = 135 if timeout is None else timeout + 10
+    safe_env = {
+        k: os.environ[k]
+        for k in ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM", "TMPDIR",
+                  "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "DBUS_SESSION_BUS_ADDRESS")
+        if k in os.environ
+    }
+    path_parts = [p for p in safe_env.get("PATH", "").split(os.pathsep) if p]
+    for extra_dir in (str(Path.home() / ".opencode" / "bin"), str(Path.home() / ".local" / "bin")):
+        if extra_dir not in path_parts:
+            path_parts.insert(0, extra_dir)
+    safe_env["PATH"] = os.pathsep.join(path_parts)
+    # The background service may have inherited API keys from another shell.
+    with tempfile.TemporaryDirectory(prefix="moa-grok-") as tmp_cwd:
+        cmd = [
+            oc_bin, "run", "--standalone", "--archived", "--agent", "plan",
+            "--format", "json", "-m", target_model, "--", full_prompt,
+        ]
+        proc = subprocess.run(cmd, cwd=tmp_cwd, env=safe_env, text=True,
+                              capture_output=True, timeout=eff_timeout)
+    chunks = []
+    errors = []
+    for line in (proc.stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        etype = ev.get("type")
+        if etype == "text":
+            part = ev.get("part") if isinstance(ev.get("part"), dict) else {}
+            txt = part.get("text") if isinstance(part.get("text"), str) else ev.get("text")
+            if isinstance(txt, str) and txt:
+                chunks.append(txt)
+        elif etype == "error":
+            err_obj = ev.get("error")
+            if isinstance(err_obj, dict):
+                errors.append(str(err_obj.get("message") or err_obj))
+            elif err_obj is not None:
+                errors.append(str(err_obj))
+    content = "".join(chunks).strip()
+    if proc.returncode != 0 or (errors and not content):
+        detail = "; ".join(errors) or (proc.stderr or "").strip() or (proc.stdout or "").strip()
+        raise RuntimeError(f"OpenCode Grok OAuth failed (exit {proc.returncode}): {detail[:1000]}")
+    if not content:
+        raise ValueError("Empty or invalid model response from OpenCode Grok")
+    return content
 
 
 def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=None, timeout=None):
     """Only external providers reach this adapter; native role IDs are never dispatched."""
     if provider not in KEY_NAMES:
         raise ValueError(f"Unknown external API provider: {provider}")
+    if provider == "grok":
+        if api_key != GROK_OAUTH:
+            raise ValueError(GROK_LOGIN_REQUIRED)
+        return call_opencode_grok(prompt, model, system_prompt, timeout)
     if provider == "agy":
         agy_bin = agy_executable() or "agy"
         cmd_prefix = (["dbus-run-session", "--", agy_bin]
@@ -440,70 +526,6 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
         if not isinstance(content, str) or not content.strip():
             raise ValueError("Empty or invalid model response from Codex")
         return content.strip()
-    if provider == "grok" and api_key == "opencode-oauth":
-        direct_key = next((os.environ[k] for k in ("XAI_API_KEY", "GROK_API_KEY") if os.environ.get(k)), None)
-        try:
-            oc_bin = opencode_executable() or "opencode"
-            target_model = model or "grok-4.7"
-            if "/" not in target_model:
-                target_model = f"xai/{target_model}"
-            full_prompt = (f"<system_instructions>\n{system_prompt}\n</system_instructions>\n\n{prompt}"
-                           if system_prompt else prompt)
-            eff_timeout = 120 if timeout is None else timeout
-            safe_env = {
-                k: os.environ[k]
-                for k in ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM", "TMPDIR",
-                          "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "DBUS_SESSION_BUS_ADDRESS")
-                if k in os.environ
-            }
-            path_parts = [p for p in safe_env.get("PATH", "").split(os.pathsep) if p]
-            for extra_dir in (str(Path.home() / ".opencode" / "bin"), str(Path.home() / ".local" / "bin")):
-                if extra_dir not in path_parts:
-                    path_parts.insert(0, extra_dir)
-            safe_env["PATH"] = os.pathsep.join(path_parts)
-            with tempfile.TemporaryDirectory(prefix="moa-grok-") as tmp_cwd:
-                cmd = [
-                    oc_bin, "run", "--archived", "--agent", "plan",
-                    "--format", "json", "-m", target_model, "--", full_prompt,
-                ]
-                proc = subprocess.run(cmd, cwd=tmp_cwd, env=safe_env, text=True,
-                                      capture_output=True, timeout=eff_timeout + (15 if timeout is None else 10))
-            chunks = []
-            errors = []
-            for line in (proc.stdout or "").splitlines():
-                line = line.strip()
-                if not line.startswith("{"):
-                    continue
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
-                if not isinstance(ev, dict):
-                    continue
-                etype = ev.get("type")
-                if etype == "text":
-                    part = ev.get("part") if isinstance(ev.get("part"), dict) else {}
-                    txt = part.get("text") if isinstance(part.get("text"), str) else ev.get("text")
-                    if isinstance(txt, str) and txt:
-                        chunks.append(txt)
-                elif etype == "error":
-                    err_obj = ev.get("error")
-                    if isinstance(err_obj, dict):
-                        errors.append(str(err_obj.get("message") or err_obj))
-                    elif err_obj is not None:
-                        errors.append(str(err_obj))
-            content = "".join(chunks).strip()
-            if proc.returncode != 0 or (errors and not content):
-                detail = "; ".join(errors) or (proc.stderr or "").strip() or (proc.stdout or "").strip()
-                raise RuntimeError(f"opencode grok failed (exit {proc.returncode}): {detail[:1000]}")
-            if not content:
-                raise ValueError("Empty or invalid model response from opencode grok")
-            return content
-        except Exception:
-            if not direct_key:
-                raise
-            api_key = direct_key
-
     headers = {"Content-Type": "application/json"}
 
     if provider == "gemini":
@@ -533,8 +555,6 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
             if base_override:
                 url = base_override if base_override.endswith("/chat/completions") else f"{base_override}/chat/completions"
         headers["Authorization"] = f"Bearer {api_key}"
-        if provider == "grok" and isinstance(model, str) and model.startswith("xai/"):
-            model = model.split("/", 1)[1]
         effort = None
         if provider in ("deepseek", "deepseek-flash"):
             default_ds = "deepseek-flash" if provider == "deepseek-flash" else "deepseek-v4-pro"
@@ -604,6 +624,8 @@ def error_text(error, api_key=None):
 
 def run_worker(provider, settings, prompt, api_key, system_prompt=None, max_tokens=None, attempts=2):
     result = {"provider": provider, "model": settings["model"], "display_name": settings["display_name"]}
+    if provider in EXTERNAL_CLI_EXECUTORS:
+        result["executor"] = EXTERNAL_CLI_EXECUTORS[provider]
     for attempt in range(1, attempts + 1):
         result["attempts"] = attempt
         try:
@@ -665,9 +687,10 @@ def parser():
                         help="Defaults to the platform entrypoint, or headless for the shared script")
     result.add_argument("--coordinator-model", default="current", help="Session model metadata; never an API provider")
     result.add_argument("--task-id")
-    result.add_argument("--models", help="Comma-separated external providers, e.g. agy,codex,codex-max,grok,deepseek,deepseek-v4.1,deepseek-max,kimi,kimi-highspeed,minimax")
+    result.add_argument("--models", help="Comma-separated external providers, e.g. agy/gemini-4-neon-high,grok,kimi-highspeed. Use agy/<model-id> to select an agy variant.")
     result.add_argument("--raw", action="store_true", help="Return worker JSON without an API aggregator")
-    result.add_argument("--review", "--glm52", dest="review", action="store_true")
+    result.add_argument("--review", "--glm52", dest="review", action="store_true",
+                        help="Review with the configured reviewer or only the explicitly selected providers")
     result.add_argument("--cross-review", "--evidence-review", dest="cross_review", action="store_true",
                         help="Run multi-stage evidence-based cross-review and revision")
     result.add_argument("--cycles", type=int, choices=(1, 2), default=1,
@@ -697,7 +720,9 @@ def main(argv=None):
                 raise ValueError("--models must select at least one external provider")
             selected = []
             for token in tokens:
-                prov, settings = resolve_model_token(token, base_providers)
+                prov, settings = resolve_model_token(token, base_providers, config.get("agy_catalog", []))
+                if prov == "agy" and prov in selected and settings["model"] != providers[prov]["model"]:
+                    raise ValueError("Select one agy model per run")
                 providers[prov] = settings
                 if prov not in selected:
                     selected.append(prov)
@@ -724,7 +749,7 @@ def main(argv=None):
             key = provider_key(name)
             ptype = (
                 "Local CLI" if name in ("agy", "codex")
-                else "OAuth CLI" if (name == "grok" and key == "opencode-oauth")
+                else "OAuth CLI" if name == "grok"
                 else "API"
             )
             if not key:
@@ -734,7 +759,7 @@ def main(argv=None):
                     "type": ptype,
                     "status": "⚠️ No Auth",
                     "latency": "-",
-                    "details": "Key missing or CLI not found",
+                    "details": GROK_LOGIN_REQUIRED if name == "grok" else "Key missing or CLI not found",
                 }
             if name == "codex" and parse_codex_model_spec(settings["model"])[1] in ("max", "xhigh"):
                 probe_timeout = 120
@@ -796,7 +821,9 @@ def main(argv=None):
 
     record = {
         "schema_version": 1, "prompt_version": PROMPT_VERSION, "run_id": str(uuid.uuid4()), "platform": args.platform,
-        "coordinator_model": args.coordinator_model, "task_id": args.task_id, "mode": mode, "executor": "api",
+        "coordinator_model": args.coordinator_model, "task_id": args.task_id, "mode": mode,
+        "executor": EXTERNAL_CLI_EXECUTORS.get(selected[0], "api")
+        if args.models is not None and len(selected) == 1 else "api",
         "status": "running", "started_at": timestamp(), "native_roles": config["native_roles"],
         "prompt_sha256": hashlib.sha256(args.prompt.encode("utf-8")).hexdigest(),
         "prompt_characters": len(args.prompt), "worker_configuration": worker_configuration,
@@ -823,19 +850,27 @@ def main(argv=None):
         return finish("failed", error_text(error))
 
     if mode == "review":
-        primary_reviewer = dict(config["reviewer"])
+        if args.models is not None:
+            candidates = worker_configuration
+        else:
+            configured_reviewer = dict(config["reviewer"])
+            candidates = [configured_reviewer]
+            if configured_reviewer["provider"] != "grok":
+                candidates.extend(
+                    {"provider": p, **config["providers"][p]}
+                    for p in config["aggregation_priority"]
+                    if p != configured_reviewer["provider"] and p in config["providers"]
+                )
+        primary_reviewer = candidates[0]
         record["reviewer_configuration"] = primary_reviewer
-        candidates = [primary_reviewer] + [
-            {"provider": p, **config["providers"][p]}
-            for p in config["aggregation_priority"]
-            if p != primary_reviewer["provider"] and p in config["providers"]
-        ]
         keyed_candidates = [
             (cand, key)
             for cand in candidates
             if (key := provider_key(cand["provider"]))
         ]
         if not keyed_candidates:
+            if all(cand["provider"] == "grok" for cand in candidates):
+                return finish("failed", GROK_LOGIN_REQUIRED)
             return finish("failed", f"Review requires a configured key for {primary_reviewer['provider']}")
         result = None
         for idx, (cand, key) in enumerate(keyed_candidates):
@@ -862,6 +897,8 @@ def main(argv=None):
     keys = {name: provider_key(name) for name in selected}
     missing = [name for name, key in keys.items() if not key]
     if args.models is not None and missing:
+        if missing == ["grok"]:
+            return finish("failed", GROK_LOGIN_REQUIRED)
         return finish("failed", f"Selected providers lack API keys: {', '.join(missing)}")
     active = {name: key for name, key in keys.items() if key}
     record["skipped_providers"] = missing

@@ -46,8 +46,8 @@ MCP broker supplies file tools and sandboxed tests; native CLI tools remain off.
 Check the actual model picker and fresh included allowance before dispatch.
 
 Prefer available included subscription allowance, following `auto_funding` in the
-shared profile. **`Grok-4.7`** (`grok` via signed-in OpenCode xAI OAuth at `$0` API spend,
-or `XAI_API_KEY`), **`GLM-5.3`** (`glm`), **`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`**
+shared profile. **`Grok-4.7`** (`grok` via signed-in OpenCode xAI OAuth only),
+**`GLM-5.3`** (`glm`), **`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`**
 (`deepseek` / `deepseek-v4.1` / `deepseek-max`), **`Kimi-K3.1-Pro` / `kimi-highspeed`**
 (`kimi`, via `MOONSHOT_API_KEY` or `KIMI_API_KEY`), and **`MiniMax-M3`** (`minimax`) are
 supported `api_advisors` for planning and read-only review through the shared MoA runner;

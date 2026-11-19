@@ -14,9 +14,12 @@
   "agy_catalog": [
     {"family": "Orchestrator (Carbon)", "models": ["gemini-pro-orchestrator"], "tier": "l3_and_review"},
     {"family": "Orchestrator (Argon)", "models": ["gemini-pro-orchestrator-argon"], "tier": "l3_and_review"},
+    {"family": "Orchestrator (Neon)", "models": ["gemini-pro-orchestrator-neon"], "tier": "l3_and_review"},
+    {"family": "Gemini 4 Neon", "models": ["gemini-4-neon-xhigh", "gemini-4-neon-high", "gemini-4-neon-medium", "gemini-4-neon-low"], "tier": "deep_coding"},
     {"family": "Gemini 4 Carbon", "models": ["gemini-4-carbon-high", "gemini-4-carbon-medium", "gemini-4-carbon-low"], "tier": "coding"},
     {"family": "Gemini 4 Argon", "models": ["gemini-4-argon-high", "gemini-4-argon-medium", "gemini-4-argon-low"], "tier": "coding_and_fast"},
     {"family": "Gemini 4 Hydrogen", "models": ["gemini-4-hydrogen-xhigh", "gemini-4-hydrogen-high", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-low"], "tier": "deep_coding"},
+    {"family": "Gemini 3.8 Flash", "models": ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low"], "tier": "coding_and_fast"},
     {"family": "Claude Opus 5.5", "models": ["claude-opus-5-5-high", "claude-opus-5-5-medium", "claude-opus-5-5-low"], "tier": "l3_and_review"},
     {"family": "Claude Sonnet 5.5", "models": ["claude-sonnet-5-5-high", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-low"], "tier": "coding_and_review"},
     {"family": "GPT-OSS 120B", "models": ["gpt-oss-120b-medium"], "tier": "open_weights_fallback"}
@@ -37,6 +40,7 @@
     "filler": [
       "gemini-4-argon-medium",
       "gemini-4-carbon-low",
+      "gemini-3.8-flash-low",
       "claude-sonnet-5-5-low",
       "gpt-oss-120b-medium"
     ],
@@ -48,6 +52,10 @@
       "gemini-4-argon-low",
       "gemini-4-hydrogen-medium",
       "gemini-4-hydrogen-low",
+      "gemini-4-neon-medium",
+      "gemini-4-neon-low",
+      "gemini-3.8-flash-high",
+      "gemini-3.8-flash-medium",
       "claude-sonnet-5-5-high",
       "claude-sonnet-5-5-medium",
       "claude-sonnet-5-5-low",
@@ -55,6 +63,7 @@
     ],
     "l2": [
       "gemini-pro-orchestrator",
+      "gemini-4-neon-high",
       "gemini-4-hydrogen-xhigh",
       "gemini-4-hydrogen-high",
       "gemini-4-argon-high",
@@ -66,6 +75,8 @@
     "l3": [
       "gemini-pro-orchestrator",
       "gemini-pro-orchestrator-argon",
+      "gemini-pro-orchestrator-neon",
+      "gemini-4-neon-xhigh",
       "gemini-4-hydrogen-xhigh",
       "claude-opus-5-5-high",
       "claude-opus-5-5-medium",
@@ -75,6 +86,7 @@
     "review": [
       "gemini-pro-orchestrator",
       "gemini-pro-orchestrator-argon",
+      "gemini-pro-orchestrator-neon",
       "claude-opus-5-5-high",
       "claude-sonnet-5-5-high",
       "gemini-4-hydrogen-xhigh"
@@ -85,7 +97,7 @@
     "prepaid_requires_explicit_authorization": true
   },
   "api_advisors": {
-    "providers": ["grok", "glm", "deepseek", "deepseek-flash", "kimi", "minimax"],
+    "providers": ["glm", "deepseek", "deepseek-flash", "kimi", "minimax"],
     "roles": ["planning", "read_only_review"],
     "funding": "prepaid_api"
   },

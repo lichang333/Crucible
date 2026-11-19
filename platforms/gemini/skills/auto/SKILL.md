@@ -16,9 +16,8 @@ The current Antigravity coordinator dispatches, resolves findings, performs runt
 
 Choose the executor using the shared workflow's task-fit criteria and the user's
 funding preference. Unless the user explicitly overrides a model, the coordinator
-automatically selects the right worker model and cross-family reviewer from the 8 active
-families / 19 variants in `agy_catalog` (`python3 "$W" models`, excluding retired
-`gemini-3.8`; UI display names are auto-resolved), failing over across quota/RPM pools
+automatically selects the right worker model and cross-family reviewer from the shared
+`agy_catalog` (`python3 "$W" models`; add `--live` to check availability), failing over across quota/RPM pools
 when needed. Model defaults are starting candidates; assess uncertainty,
 failure impact and likely rework before each dispatch.
 For local agy execution, `agy_worker.py` runs an isolated child worker in a separate Git worktree under macOS sandbox:
@@ -41,8 +40,8 @@ Prefer available included subscription allowance, following `auto_funding` in th
 shared profile. **`GPT-6-Luna (High / Max)`** (`codex` / `gpt-6-luna-high` default, plus
 `codex-max` / `gpt-6-luna-max` at `$0` API cost via ChatGPT-authenticated `codex`,
 auto-discovering newer `/Applications/ChatGPT.app` bundled `codex` over stale Homebrew
-installs), **`Grok-4.7`** (via local signed-in OpenCode xAI subscription at `$0` API cost,
-or `XAI_API_KEY`), **`GLM-5.3`**, **`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`** (`deepseek` / `deepseek-v4.1` / `deepseek-max`), **`Kimi-K3.1-Pro`** (`kimi` / `kimi-highspeed` / `kimi-max`, via `MOONSHOT_API_KEY` or `KIMI_API_KEY`), and **`MiniMax-M3`** are supported
+installs), **`Grok-4.7`** (via signed-in OpenCode xAI OAuth only), **`GLM-5.3`**,
+**`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`** (`deepseek` / `deepseek-v4.1` / `deepseek-max`), **`Kimi-K3.1-Pro`** (`kimi` / `kimi-highspeed` / `kimi-max`, via `MOONSHOT_API_KEY` or `KIMI_API_KEY`), and **`MiniMax-M3`** are supported
 advisors and cross-family patch reviewers through `moa_runner.py` and
 `python3 "$W" review '<run-id>' --executor auto` (or `--model gpt-6-luna-high` /
 `--model codex-max` / `--model grok` / `--executor api`, auto-failing over across `agy`

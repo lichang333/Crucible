@@ -11,14 +11,14 @@ Claude entrypoints live in `platforms/claude/skills/`; Codex entrypoints live in
 Edit the shared source rather than copying implementations into platform folders.
 
 For multi-agent work, the current Antigravity session owns dispatch, subagents and integration.
-Consult `config/gemini.json` and `config/headless.json` (`agy_catalog`: 8 active families / 19 variants,
-excluding retired `gemini-3.8`) for role choices. For `/swarm` and `/auto`, unless the user explicitly
+Consult `config/gemini.json` and `config/headless.json` (`agy_catalog`) for role choices.
+For `/swarm` and `/auto`, unless the user explicitly
 pins a model, the Coordinator automatically selects task-fit models per worker and cross-family reviewers
 (pairing Gemini 4 / Orchestrator with Claude Opus/Sonnet 5.5 or GPT-OSS 120B) and switches quota/RPM
 buckets automatically on `429` or quota exhaustion without asking the user to pick models. Antigravity
 `/swarm`, `/moa`, and `/auto` sessions can also invoke external/bridged advisors and cross-family reviewers
 — **`codex` (`GPT-6-Luna (High)` default + `codex-max` / `gpt-6-luna-max` via signed-in ChatGPT/Codex CLI subscription at `$0` API spend, auto-discovering newer `/Applications/ChatGPT.app` bundled `codex` over stale `/opt/homebrew/bin/codex`)**,
-**`grok` (`Grok-4.7` via signed-in OpenCode xAI OAuth subscription at `$0` API spend, or `XAI_API_KEY`)**,
+**`grok` (`Grok-4.7` via signed-in OpenCode xAI OAuth only)**,
 **`glm` (`GLM-5.3`)**, **`deepseek` (`DeepSeek-V4-Pro`, plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort)**, **`kimi` (`Kimi-K3.1-Pro` + `kimi-highspeed` & `kimi-max` effort when `MOONSHOT_API_KEY`/`KIMI_API_KEY` is set)**, and **`minimax` (`MiniMax-M3`)** — via
 `skills/moa/moa_runner.py` (`--platform gemini`) and `agy_worker.py review --executor auto|codex|api`
 (especially when the Claude/GPT-OSS quota pool runs low); low-effort filler/mock/comment slices route to `agy_routes.filler` (`gemini-4-argon-low`) to reserve `Carbon`/`Hydrogen`/`GPT-6-Luna` quota for core logic and review. Read-only

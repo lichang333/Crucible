@@ -41,27 +41,41 @@ class PlatformPackages(unittest.TestCase):
             swarm_entry = ROOT / "platforms" / platform / "skills/swarm"
             with self.subTest(platform=platform, skill="swarm"):
                 self.assertTrue((swarm_entry / "SKILL.md").is_file())
+                swarm_expected = {
+                    "agy_worker.py": ROOT / "skills/auto/agy_worker.py",
+                    "routing.json": ROOT / "config" / f"{platform}.json",
+                    "headless.json": ROOT / "config/headless.json",
+                }
                 if platform == "codex":
                     skill_text = (swarm_entry / "SKILL.md").read_text()
                     self.assertTrue(skill_text.startswith("---\n"))
                     self.assertIn("name: swarm", skill_text.split("---\n", 2)[1])
-                    self.assertTrue((swarm_entry / "routing.json").is_symlink())
-                    self.assertEqual((swarm_entry / "routing.json").resolve(),
-                                     (ROOT / "config/codex.json").resolve())
-                    continue
-                swarm_expected = {
-                    "agy_worker.py": ROOT / "skills/auto/agy_worker.py",
-                    "moa_runner.py": ROOT / "skills/moa/moa_runner.py",
-                    "routing.json": ROOT / "config" / f"{platform}.json",
-                    "headless.json": ROOT / "config/headless.json",
-                    "auto-workflow.md": ROOT / "shared/auto-workflow.md",
-                }
+                else:
+                    swarm_expected.update({
+                        "moa_runner.py": ROOT / "skills/moa/moa_runner.py",
+                        "auto-workflow.md": ROOT / "shared/auto-workflow.md",
+                    })
                 for name, source in swarm_expected.items():
                     self.assertTrue((swarm_entry / name).is_symlink(), name)
                     self.assertTrue((swarm_entry / name).is_file(), name)
                     self.assertEqual((swarm_entry / name).resolve(), source.resolve())
 
     def test_installed_command_shapes_resolve_without_model_calls(self):
+        swarm = ROOT / "platforms/codex/skills/swarm"
+        routing = json.loads((swarm / "routing.json").read_text())["swarm"]
+        self.assertEqual(routing["implementer"]["executor"], "agy")
+        self.assertEqual(routing["implementer"]["model"], "gemini-pro-orchestrator-neon")
+        self.assertEqual(routing["secondary_implementer"], "claude-sonnet-5-5-high")
+        self.assertEqual(routing["filler"], "gpt-oss-120b-medium")
+        self.assertEqual(routing["reviewer"], "current")
+        catalog = json.loads((swarm / "headless.json").read_text())["agy_catalog"]
+        available = {model for family in catalog for model in family["models"]}
+        self.assertLessEqual({routing["implementer"]["model"], routing["secondary_implementer"],
+                              routing["filler"]}, available)
+        subprocess.run(
+            [sys.executable, str(swarm / "agy_worker.py"), "run", "--help"],
+            text=True, capture_output=True, check=True,
+        )
         for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
             entry = ROOT / "platforms" / platform / "skills"
             with self.subTest(platform=platform):
@@ -104,9 +118,9 @@ class PlatformPackages(unittest.TestCase):
             text=True, capture_output=True, check=True,
         )
         catalog = json.loads(out.stdout)
-        self.assertEqual(len(catalog["families"]), 8)
-        self.assertEqual(len(catalog["models"]), 19)
-        self.assertNotIn("gemini-3.8", out.stdout)
+        self.assertEqual(len(catalog["families"]), 11)
+        self.assertEqual(len(catalog["models"]), 27)
+        self.assertEqual(sum(model.startswith("gemini-") for model in catalog["models"]), 20)
 
     def test_cursor_agent_and_rule_entrypoints(self):
         agent_path = ROOT / "platforms/cursor/agents/swarm-coordinator.md"

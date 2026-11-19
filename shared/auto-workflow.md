@@ -108,8 +108,8 @@ operations with the coordinator, but does not exempt the result from review.
 Announce the execution level/model and the review route (or brief skip reason).
 User model choices take priority when the executor supports them; when the user does
 not specify a model, the coordinator automatically selects an eligible task-fit worker
-model and a cross-family reviewer from `agy_catalog` in `headless.json` (8 active
-families / 19 variants excluding retired `gemini-3.8`; inspect via `python3 "$W" models`)
+model and a cross-family reviewer from `agy_catalog` in `headless.json` (inspect
+with `python3 "$W" models`; add `--live` for the models currently offered by `agy`)
 without asking the user to pick one.
 Read `routing.json` and its shared defaults, `headless.json`
 (installed next to the skill; source is `config/headless.json`),
@@ -131,13 +131,16 @@ extra-credit-only subscription entries count as paid usage. Preserve an explicit
 user choice for a particular task. This is coordinator routing policy, not an
 automatic billing control implemented in the worker.
 
-`api_advisors.providers` includes Grok, GLM, DeepSeek (`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`), Kimi (`Kimi-K3.1-Pro` / `kimi-highspeed`), and MiniMax. The user identifies
+`api_advisors.providers` includes GLM, DeepSeek (`DeepSeek-V4-Pro` / `DeepSeek-V4.1-Flash`), Kimi (`Kimi-K3.1-Pro` / `kimi-highspeed`), and MiniMax. The user identifies
 these as prepaid channels. Remember them as candidates, but their keys, balances
 or inclusion in the list do not by themselves authorize consuming credit. Before
 a paid call, check for applicable explicit spending authorization in this session;
 if absent, present the concrete provider/model, purpose and bounded call scope for
 approval. Existing authorization need not be requested again. Do not top up,
 enable overages or call models just to probe quota.
+
+Grok uses a confirmed OpenCode xAI OAuth login. An explicit `review --model grok`
+uses only that subscription route and reports a failure if it is unavailable.
 
 These providers are implemented by the shared `skills/moa/moa_runner.py` as text
 analysis, so `/auto` may use them for planning or read-only review under that

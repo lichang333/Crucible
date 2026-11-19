@@ -125,35 +125,40 @@ def load_headless_profile():
     return {}
 
 
+def _agy_alias_key(name):
+    return re.sub(r"[^a-z0-9]+", " ", name.strip().lower()).strip()
+
+
 def _build_agy_model_aliases():
     """Build normalized lookup table from UI display names & family shorthands to canonical agy IDs."""
     aliases = {
         "orchestrator": "gemini-pro-orchestrator",
-        "orchestrator carbon": "gemini-pro-orchestrator",
-        "carbon orchestrator": "gemini-pro-orchestrator",
         "gemini pro orchestrator": "gemini-pro-orchestrator",
-        "gemini pro orchestrator carbon": "gemini-pro-orchestrator",
-        "orchestrator argon": "gemini-pro-orchestrator-argon",
-        "argon orchestrator": "gemini-pro-orchestrator-argon",
-        "gemini pro orchestrator argon": "gemini-pro-orchestrator-argon",
         "gpt oss": "gpt-oss-120b-medium",
-        "gpt oss 120b": "gpt-oss-120b-medium",
-        "gpt oss 120b medium": "gpt-oss-120b-medium",
     }
-    tiered = (
-        (("gemini 4 carbon",), "gemini-4-carbon", ("high", "medium", "low"), "high"),
-        (("gemini 4 argon",), "gemini-4-argon", ("high", "medium", "low"), "high"),
-        (("gemini 4 hydrogen",), "gemini-4-hydrogen", ("xhigh", "high", "medium", "low"), "high"),
-        (("claude opus 5 5", "opus 5 5"), "claude-opus-5-5", ("high", "medium", "low"), "high"),
-        (("claude sonnet 5 5", "sonnet 5 5"), "claude-sonnet-5-5", ("high", "medium", "low"), "high"),
-    )
-    for prefixes, canonical_prefix, tiers, default_tier in tiered:
-        for prefix in prefixes:
-            aliases[prefix] = f"{canonical_prefix}-{default_tier}"
-            for tier in tiers:
-                aliases[f"{prefix} {tier}"] = f"{canonical_prefix}-{tier}"
+    catalog = load_headless_profile().get("agy_catalog") or []
+    for entry in catalog:
+        if not isinstance(entry, dict) or not isinstance(entry.get("family"), str):
+            continue
+        family = _agy_alias_key(entry["family"])
+        models = [model for model in entry.get("models", []) if isinstance(model, str) and model]
+        if not family or not models:
+            continue
+        tiers = {model.rsplit("-", 1)[-1]: model for model in models
+                 if model.rsplit("-", 1)[-1] in ("low", "medium", "high", "xhigh")}
+        names = [family]
+        if family.startswith("orchestrator "):
+            variant = family.removeprefix("orchestrator ")
+            names.extend((f"{variant} orchestrator", f"gemini pro {family}"))
+        elif family.startswith("claude "):
+            names.append(family.removeprefix("claude "))
+
+        for name in names:
+            aliases[name] = tiers.get("high", models[0])
+            for effort, model in tiers.items():
+                aliases[f"{name} {effort}"] = model
             if "xhigh" in tiers:
-                aliases[f"{prefix} x high"] = f"{canonical_prefix}-xhigh"
+                aliases[f"{name} x high"] = tiers["xhigh"]
     return aliases
 
 
@@ -164,8 +169,7 @@ def resolve_agy_model(name):
     """Normalize UI display names or shorthands into canonical agy model IDs; pass unknown names through."""
     if not isinstance(name, str) or not name.strip():
         return name
-    key = re.sub(r"[^a-z0-9]+", " ", name.strip().lower()).strip()
-    return AGY_MODEL_ALIASES.get(key, name)
+    return AGY_MODEL_ALIASES.get(_agy_alias_key(name), name)
 
 
 def find_agy_bin():
@@ -1161,7 +1165,7 @@ def cmd_record(a):
     print(json.dumps(entry, ensure_ascii=False))
 
 
-API_PROVIDERS = ("grok", "deepseek", "deepseek-flash", "glm", "kimi", "minimax")
+REVIEW_PROVIDERS = ("grok", "deepseek", "deepseek-flash", "glm", "kimi", "minimax")
 
 
 def _load_moa_runner():
@@ -1210,7 +1214,7 @@ def _infer_api_target(model_arg):
 
 
 def _run_api_review(review_prompt, requested_model, prior_fallbacks=None):
-    """Run read-only patch review across configured prepaid API providers with failover."""
+    """Review through Grok OAuth or the configured API providers."""
     try:
         runner = _load_moa_runner()
         runner.load_env()
@@ -1226,14 +1230,15 @@ def _run_api_review(review_prompt, requested_model, prior_fallbacks=None):
     order = []
     if req_prov and req_prov in providers_cfg:
         order.append(req_prov)
-    for prov in API_PROVIDERS:
-        if prov in providers_cfg and prov not in order:
-            order.append(prov)
+    if req_prov != "grok":
+        order.extend(prov for prov in REVIEW_PROVIDERS if prov in providers_cfg and prov not in order)
 
     keyed = [(prov, runner.provider_key(prov)) for prov in order]
     keyed = [(prov, key) for prov, key in keyed if key]
     if not keyed:
-        msg = "REFUSED: api review requires at least one configured key for grok, deepseek, glm, kimi, or minimax."
+        if req_prov == "grok":
+            sys.exit("REFUSED: Grok review requires an active OpenCode xAI OAuth login.")
+        msg = "REFUSED: review requires OpenCode xAI OAuth or a key for deepseek, glm, kimi, or minimax."
         if prior_fallbacks:
             msg += f" (prior agy failures: {json.dumps(prior_fallbacks, ensure_ascii=False)})"
         sys.exit(msg)
@@ -1267,10 +1272,13 @@ def _run_api_review(review_prompt, requested_model, prior_fallbacks=None):
             err = "empty response"
         else:
             err = (res.get("error") if isinstance(res, dict) else None) or "unknown api error"
-        fallbacks.append({"executor": "api", "provider": prov, "model": settings["model"], "error": err})
+        fallbacks.append({"executor": "opencode" if prov == "grok" else "api",
+                          "provider": prov, "model": settings["model"], "error": err})
 
     summary = "; ".join(f"{fb['provider']}({fb['model']}): {fb['error']}" for fb in fallbacks)
-    msg = f"REFUSED: api review failed across all configured providers: {summary}"
+    if req_prov == "grok":
+        sys.exit(f"REFUSED: Grok OAuth review failed: {summary}")
+    msg = f"REFUSED: review failed across all configured providers: {summary}"
     if prior_fallbacks:
         msg += f" (prior agy failures: {json.dumps(prior_fallbacks, ensure_ascii=False)})"
     sys.exit(msg)
@@ -1533,6 +1541,10 @@ def cmd_review(a):
                 sys.exit("REFUSED: codex review returned empty output.")
             sys.exit(f"REFUSED: codex review failed {err}")
         review_filename, meta_key, banner = "codex_review.json", "codex_review", "CODEX"
+
+    if win_provider == "grok":
+        final_executor = "opencode"
+        review_filename, meta_key, banner = "opencode_review.json", "opencode_review", "OpenCode Grok"
 
     review_record = {
         "run": a.run_id,

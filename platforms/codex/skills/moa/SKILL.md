@@ -14,7 +14,7 @@ external provider settings from the common profile.
   session. Decompose independent research or analysis into self-contained briefs;
   select available models from `native_roles`. When selecting a different model,
   use the tool's supported fresh-context mode and include the required context.
-- Use the configured Astra planner/reviewer for difficult plans, substantial
+- Use the configured GPT-6.2 Astra planner/reviewer for difficult plans, substantial
   disagreement or consequential verification. The current session retains
   dispatch, evidence collection and integration. Ordinary tasks need no extra
   management pass. If a requested model is unavailable, state that limitation
@@ -30,6 +30,8 @@ external provider settings from the common profile.
   `--models agy,grok,deepseek,deepseek-v4.1,glm,kimi,kimi-highspeed,minimax` illustrates selecting external providers (`agy` via Google AI Ultra and `grok` via signed-in OpenCode xAI OAuth run at `$0` API spend; `deepseek` = `DeepSeek-V4-Pro`, `deepseek-v4.1` = `DeepSeek-V4.1-Flash`, `glm` = `GLM-5.3`, `kimi` = `Kimi-K3.1-Pro` / `kimi-highspeed`, `minimax` = `MiniMax-M3`). Inspect
   `--show-config` without making a model call. External API calls use their API keys
   and billing; native subagents use the host's own model access.
+  Select a specific model from the [agy catalog](headless.json) with `--models agy/<model-id>`,
+  such as `--models agy/gemini-pro-orchestrator-neon,grok`.
 - Use Codex's available search tools for current information. Synthesize successful
   answers in this session; Codex is not a reason to select headless API aggregation.
 - If external providers are unavailable, native analysis can still satisfy the
