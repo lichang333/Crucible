@@ -14,7 +14,7 @@ Classify every incoming prompt immediately without asking how to proceed unless 
 1. **Quick Q&A, explanations, or tiny 1–2 edit L0 / live ops / SSH**:
    - Handle directly in this session (`L0`) for instant response without worker overhead.
 2. **Architecture, trade-offs, or multi-perspective Q&A**:
-   - Consult `python3 "$HOME/.config/opencode/skills/moa/moa_runner.py" --platform opencode --raw -- '<question>'` (`Orchestrator (Carbon)` via `agy` + `DeepSeek-V4-Pro` + `MiniMax-M3`), or `--models agy` for `$0` marginal API spend.
+   - Consult `python3 "$HOME/.config/opencode/skills/moa/moa_runner.py" --platform opencode --raw -- '<question>'` (`Orchestrator (Neon)` via `agy` + `DeepSeek-V4-Pro` + `MiniMax-M3`), or `--models agy` for `$0` marginal API spend.
 3. **Single bounded coding module or bugfix (`L1`/`L2`)**:
    - Dispatch 1 isolated `agy_worker.py run` worker in a standalone `$TMPDIR` sandbox, inspect diff, run cross-family `review --executor auto` (or `--executor agy` / `--executor api`), `verify --full`, and `apply --sha`.
 4. **Multi-file / multi-module features, refactors, or high-stakes verification**:
@@ -30,12 +30,12 @@ Unless the user explicitly requests a specific model, **you decide and pass `--m
 
 | Task / Slice Profile | Coordinator Auto-Selected Model |
 |---|---|
-| Filler (mock data, comments, copy, boilerplate) | `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review |
-| Fast / mechanical L1 edits or lightweight checks | `gemini-4-argon-high` or `gemini-4-carbon-medium` |
-| Standard L1 / L2 feature or bugfix slice | `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`) |
-| Deep algorithmic / cross-file synthesis slice | `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high` |
-| L3 architecture, invariant design, or tricky root-cause debugging | `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon` |
-| Cold-eyes adversarial patch review (`review --executor agy`) | **Must differ in family from author**: Gemini 4 author -> `claude-opus-5-5-high` / `claude-sonnet-5-5-high`; Claude author -> `gemini-pro-orchestrator` |
+| Filler (mock data, comments, copy, boilerplate) | `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Neon`, `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review |
+| Fast / mechanical L1 edits or lightweight checks | `gemini-4-carbon-high` / `gemini-4-argon-high` or `gemini-4-carbon-medium` |
+| Standard L2 feature or bugfix slice | `gemini-4-neon-high` (fallback `gemini-4-carbon-high` or `claude-sonnet-5-5-high`) |
+| Deep algorithmic / cross-file synthesis slice | `gemini-4-neon-xhigh` or `gemini-4-hydrogen-xhigh` |
+| L3 architecture, invariant design, or tricky root-cause debugging | `gemini-pro-orchestrator-neon` (`Orchestrator (Neon)`) or `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) |
+| Cold-eyes adversarial patch review (`review --executor agy`) | **Must differ in family from author**: Gemini 4 author -> `claude-opus-5-5-high` / `claude-sonnet-5-5-high`; Claude author -> `gemini-pro-orchestrator-neon` |
 
 ### 3-Tier Automatic Quota & Unsubscribed Failover (`429` / Exhaustion / Expired Keys)
 - **Tier 1 (`agy` dual quota pools)**: Google AI Ultra separates quotas across **Gemini 4 / Orchestrator** vs. **Claude 5.5 / GPT-OSS 120B**. On `quota_exhausted` or persistent `429`, **preserve partial `diff.patch`** and automatically reassign remaining coding or `resume` / `review` work to the other pool (including `gpt-oss-120b-medium`) without asking the user to pick models.

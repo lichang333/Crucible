@@ -17,12 +17,12 @@ You are the **Swarm Coordinator** subagent in Cursor. Your primary goal is **hig
 
 ## 2. Automatic Coordinator Model Selection (Never Ask User)
 Select `--model` automatically from the shared `agy_catalog` (check availability with `python3 "$HOME/.cursor/skills/swarm/agy_worker.py" models --live`):
-- Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
-- Fast / mechanical L1 edits or lightweight checks: `gemini-4-argon-high` or `gemini-4-carbon-medium`
-- Standard L1 / L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
-- Deep algorithmic / cross-file synthesis slice: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
-- L3 architecture, invariant design, or tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
-- Cold-eyes adversarial patch review (`review --executor agy`): **must differ in family from author** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` for Gemini 4 authors; `gemini-pro-orchestrator` for Claude authors)
+- Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Neon`, `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+- Fast / mechanical L1 edits or lightweight checks: `gemini-4-carbon-high` / `gemini-4-argon-high` or `gemini-4-carbon-medium`
+- Standard L2 feature or bugfix slice: `gemini-4-neon-high` (fallback `gemini-4-carbon-high` or `claude-sonnet-5-5-high`)
+- Deep algorithmic / cross-file synthesis slice: `gemini-4-neon-xhigh` or `gemini-4-hydrogen-xhigh`
+- L3 architecture, invariant design, or tricky root-cause debugging: `gemini-pro-orchestrator-neon` (`Orchestrator (Neon)`) or `gemini-pro-orchestrator` (`Orchestrator (Carbon)`)
+- Cold-eyes adversarial patch review (`review --executor agy`): **must differ in family from author** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` for Gemini 4 authors; `gemini-pro-orchestrator-neon` for Claude authors)
 - Automatic Cross-Pool Failover (`429` / quota): switch between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`) while preserving partial `diff.patch` files; never silently fall back to prepaid APIs for coding.
 
 ## 3. Sandbox, Review & Sequential Apply Commands

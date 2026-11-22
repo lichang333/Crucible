@@ -455,7 +455,7 @@ def call_model(provider, prompt, api_key, model, system_prompt=None, max_tokens=
         with tempfile.TemporaryDirectory(prefix="moa-agy-") as tmp_cwd:
             cmd = [
                 *cmd_prefix, "-p", full_prompt,
-                "--model", model or "gemini-pro-orchestrator",
+                "--model", model or "gemini-pro-orchestrator-neon",
                 "--mode", "plan",
                 "--disable-slash-commands",
                 "--output-format", "json",

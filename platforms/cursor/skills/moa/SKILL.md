@@ -1,6 +1,6 @@
 ---
 name: moa
-description: Run multi-model Q&A, architecture trade-offs, and evidence-based analysis when the user invokes /moa or asks architecture/design/trade-off questions in Cursor. Collects Orchestrator (Carbon) via Google AI Ultra (agy CLI, $0 marginal API cost) plus configured API workers, adds Cursor's web-grounded vote, and synthesizes one verified answer. For delegated coding, use auto or swarm instead.
+description: Run multi-model Q&A, architecture trade-offs, and evidence-based analysis when the user invokes /moa or asks architecture/design/trade-off questions in Cursor. Collects Orchestrator (Neon) via Google AI Ultra (agy CLI, $0 marginal API cost) plus configured API workers, adds Cursor's web-grounded vote, and synthesizes one verified answer. For delegated coding, use auto or swarm instead.
 ---
 
 # Mixture of Agents (MoA) in Cursor
@@ -10,7 +10,7 @@ The current Cursor session is the coordinator and final synthesizer. Read [the s
 ## Why this lineup saves Cursor credits and cost
 - **Host (Cursor)**: Anchor vote with live codebase tools and web search, plus final synthesis (avoids extra host agent loops or a paid API aggregator call).
 - **Default Workers (from `routing.json`)**:
-  - `agy` (`Orchestrator (Carbon)` / `gemini-pro-orchestrator`), `codex` (`GPT-6-Luna (High)`), & `grok` (`Grok-4.7`): subscription-backed (**\$0 marginal API cost**).
+  - `agy` (`Orchestrator (Neon)` / `gemini-pro-orchestrator-neon`), `codex` (`GPT-6-Luna (High)`), & `grok` (`Grok-4.7`): subscription-backed (**\$0 marginal API cost**).
   - `glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`, plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort), `kimi` (`Kimi-K3.1-Pro` + `kimi-highspeed` / `kimi-max` when `MOONSHOT_API_KEY` or `KIMI_API_KEY` is set), & `minimax` (`MiniMax-M3`): independent non-Google model families via prepaid APIs when multi-family API diversity is needed.
 - **Zero-API-cost single consult**: pass `--models agy` (or `--models agy,codex,grok`) when you only want opinions without spending prepaid API tokens.
 - **3-Tier Automatic Failover**:
@@ -27,7 +27,7 @@ The current Cursor session is the coordinator and final synthesizer. Read [the s
    Inspect `routing.json` or run `--show-config` without calling models. Parse worker answers between `===MOA_RAW_JSON_START===` and `===MOA_RAW_JSON_END===`.
 3. **Web-ground current facts**: external workers have no live web access here. Use Cursor's web search when the prompt depends on recent releases, docs, prices, or current events.
 4. **Add the host's grounded vote and synthesize**: compare worker answers against verified sources and local files, resolve disagreements using evidence rather than majority vote, and preserve material uncertainty or worker failures.
-5. **Optional deep cross-review (`--deep`)**: for genuinely complex or high-stakes tasks (or when workers materially disagree), run `--review` to critique the host draft with `Orchestrator (Carbon)` via Google AI Ultra (**\$0 API cost**):
+5. **Optional deep cross-review (`--deep`)**: for genuinely complex or high-stakes tasks (or when workers materially disagree), run `--review` to critique the host draft with `Orchestrator (Neon)` via Google AI Ultra (**\$0 API cost**):
    ```bash
    python3 "$HOME/.cursor/skills/moa/moa_runner.py" --platform cursor --review \
      -- 'Original prompt and draft to critique...'

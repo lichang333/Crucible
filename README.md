@@ -15,7 +15,7 @@ parallel Q&A analysis, isolated coding slices, and cross-family cold-eyes verifi
 
 | Workflow | Purpose | Execution |
 |---|---|---|
-| `/moa` | Multi-model Q&A and analysis | Read-only `agy` (`Orchestrator (Carbon)`) + `codex` (`GPT-6-Luna (High / Max)` via ChatGPT subscription) + `grok` (OpenCode xAI OAuth only) + configured API answers (`glm`/`deepseek`/`minimax`); current-session synthesis |
+| `/moa` | Multi-model Q&A and analysis | Read-only `agy` (`Orchestrator (Neon)`) + `codex` (`GPT-6-Luna (High / Max)` via ChatGPT subscription) + `grok` (OpenCode xAI OAuth only) + configured API answers (`glm`/`deepseek`/`minimax`); current-session synthesis |
 | `/auto` | Delegated single-module coding | Isolated `agy` sandbox worker (or native Claude Code CLI / Claude cloud bridge); cross-family review + local `verify --full` & `apply --sha` |
 | `/swarm` / `/swarms` | Parallel multi-file orchestration | Codex prefers guarded `agy` implementation on explicit `/swarm` coding tasks and reviews in the current session. Antigravity / `agy` exposes `/swarms` (`always_on` rule, leaving `/swarm` for Antigravity's built-in Native Swarm UI), OpenCode (`default_agent: swarm`), and Cursor (`alwaysApply` rule + `swarm-coordinator`) use isolated `agy` slices with cross-family verification and quota failover |
 
@@ -145,7 +145,7 @@ For API-backed Q&A, application profiles default to raw collection:
 python3 skills/moa/moa_runner.py --platform cursor --models agy,deepseek,minimax --coordinator-model current --task-id example -- 'Question to compare'
 ```
 
-Pass `--models agy` for zero-marginal-API-cost second opinions via `Orchestrator (Carbon)`.
+Pass `--models agy` for zero-marginal-API-cost second opinions via `Orchestrator (Neon)`.
 Installed platform entrypoints infer their platform automatically even when `--platform` is
 omitted. Use `--platform headless` when an explicit paid API aggregator step is wanted.
 

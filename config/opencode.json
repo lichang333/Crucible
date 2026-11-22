@@ -3,15 +3,15 @@
   "mode": "raw",
   "native_roles": {
     "coordinator": "current",
-    "planner": "gemini-pro-orchestrator",
-    "reviewer": "gemini-pro-orchestrator",
-    "implementer": "gemini-4-carbon-high",
+    "planner": "gemini-pro-orchestrator-neon",
+    "reviewer": "gemini-pro-orchestrator-neon",
+    "implementer": "gemini-4-neon-high",
     "explorer": "explore"
   },
   "worker_defaults": ["agy", "deepseek", "minimax"],
   "reviewer": {
     "provider": "agy",
-    "model": "gemini-pro-orchestrator",
-    "display_name": "Orchestrator (Carbon)"
+    "model": "gemini-pro-orchestrator-neon",
+    "display_name": "Orchestrator (Neon)"
   }
 }
