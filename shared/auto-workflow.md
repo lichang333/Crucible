@@ -357,14 +357,14 @@ or enables a paid API fallback. A failed historical run is not retried on startu
 ## Integrate and record
 
 ```bash
-python3 "$W" review '<run-id>' --executor agy --model gemini-pro-orchestrator
+python3 "$W" review '<run-id>' --executor agy --model gemini-pro-orchestrator-neon
 python3 "$W" apply '<run-id>' --sha '<reviewed-sha256>'
 python3 "$W" record '<run-id>' --level L2 --outcome accepted \
   --notes '<review and verification summary>'
 python3 "$W" clean '<run-id>'
 ```
 
-`review` defaults to `codex exec` for legacy callers, or runs read-only `--mode plan` via `agy` (`--executor agy`, default `gemini-pro-orchestrator`) on Google AI Ultra to evaluate the generated
+`review` defaults to `codex exec` for legacy callers, or runs read-only `--mode plan` via `agy` (`--executor agy`, default `gemini-pro-orchestrator-neon`) on Google AI Ultra to evaluate the generated
 patch against the brief. It checks for correctness, edge cases, regression risks and
 safety issues, printing the review and saving it to `runs/<id>/agy_review.json` (or `codex_review.json` for `codex`).
 

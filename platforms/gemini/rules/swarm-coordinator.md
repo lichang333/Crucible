@@ -19,12 +19,12 @@ Otherwise, triage every incoming user prompt automatically (no `/swarms` prefix 
    - Offload coding to isolated `agy` sandbox workers via `$HOME/.gemini/config/skills/swarms/agy_worker.py` (`--platform gemini`; full runbook in `$HOME/.gemini/config/skills/swarms/SKILL.md`).
    - For multi-file tasks, split into **2–4 disjoint slices** (`OWNED FILES` non-overlapping) and launch concurrent `agy_worker.py run --platform gemini` workers in one turn.
 4. **Automatic Coordinator Model Selection & Failover (never ask the user to pick models)**:
-   - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for pure text) — reserve `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
-   - Fast L1: `gemini-4-argon-high` / `gemini-4-carbon-medium`
-   - Standard L1/L2: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
-   - Deep synthesis: `gemini-4-hydrogen-xhigh` / `gemini-4-hydrogen-high`
-   - L3 / tricky diagnosis: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
-   - Cross-family `review --executor auto`: Gemini author -> `claude-opus-5-5-high` / `claude-sonnet-5-5-high`; Claude author -> `gemini-pro-orchestrator` (pass `--executor agy` for subscription-only or `--model grok` / `--executor api` when `agy` pools run low).
+   - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for pure text) — reserve `Neon`, `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+   - Fast L1: `gemini-4-carbon-high` / `gemini-4-argon-high` / `gemini-4-carbon-medium`
+   - Standard L2: `gemini-4-neon-high` (fallback `gemini-4-carbon-high` or `claude-sonnet-5-5-high`)
+   - Deep synthesis: `gemini-4-neon-xhigh` / `gemini-4-hydrogen-xhigh`
+   - L3 / tricky diagnosis: `gemini-pro-orchestrator-neon` (`Orchestrator (Neon)`) or `gemini-pro-orchestrator` (`Orchestrator (Carbon)`)
+   - Cross-family `review --executor auto`: Gemini author -> `claude-opus-5-5-high` / `claude-sonnet-5-5-high`; Claude author -> `gemini-pro-orchestrator-neon` (pass `--executor agy` for subscription-only or `--model grok` / `--executor api` when `agy` pools run low).
    - **3-tier automatic failover**:
      - Tier 1 (`agy` dual pools): on `429` or `quota_exhausted`, preserve partial `diff.patch` and fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / `gpt-oss-120b-medium`**.
      - Tier 2 (`agy` pools exhausted): fail over `review --executor auto` to bridged `grok` (`Grok-4.7` via signed-in OpenCode xAI subscription at `$0` API spend) or keyed APIs, and fall back to scoped host/Claude-local execution if needed.

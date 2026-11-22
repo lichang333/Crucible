@@ -21,11 +21,11 @@ Your primary optimization goal is **high quality at minimal paid API token cost*
    - **Avoid spawning multiple `subagent(agent="general")` writers by default**: each `general` subagent inherits the host's paid API model (e.g., `zhipu/glm-5.3`) and re-reads context, multiplying API token spend 3–5×.
    - Instead, split the task into **2–4 disjoint slices** (`<owned_files>` must not overlap) and launch concurrent `agy_worker.py run` processes in one turn (or background shell commands / parallel `shell` calls).
    - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.config/opencode/skills/swarm/agy_worker.py" models`):
-     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
-     - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium`
-     - Standard L1/L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
-     - Deep algorithmic / multi-file synthesis: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
-     - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
+     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — save `Neon`, `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+     - Fast L1 / mechanical edits: `gemini-4-carbon-high` / `gemini-4-argon-high` or `gemini-4-carbon-medium`
+     - Standard L2 feature or bugfix slice: `gemini-4-neon-high` (fallback `gemini-4-carbon-high` or `claude-sonnet-5-5-high`)
+     - Deep algorithmic / multi-file synthesis: `gemini-4-neon-xhigh` or `gemini-4-hydrogen-xhigh`
+     - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator-neon` (`Orchestrator (Neon)`) or `gemini-pro-orchestrator` (`Orchestrator (Carbon)`)
      - **3-tier automatic quota / unsubscribed failover**:
        - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
        - **Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted)**: automatically downgrade to the OpenCode native host or scoped native subagents (`general` / `explore`) using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, plus `agy_worker.py review --executor auto` (which fails over at `$0` API spend to ChatGPT-authenticated **`codex`** `gpt-6-luna-high`, auto-preferring newer `/Applications/ChatGPT.app` bundled `codex`, and OpenCode **`grok`**, before `--executor api`; pass `--model codex-max` / `gpt-6-luna-max` for max-effort Codex review).
@@ -39,10 +39,10 @@ Your primary optimization goal is **high quality at minimal paid API token cost*
 
 2. **Codebase Recon & Multi-Model Research Waves**:
    - **Small/fast repo recon**: run direct `glob`/`grep`/`read` or 2–3 parallel `subagent(agent="explore", ...)` calls (strictly read-only, scoped questions).
-   - **Architecture / domain analysis**: run [moa_runner.py](moa_runner.py) `--platform opencode --raw` (uses `Orchestrator (Carbon)` via `agy` + `codex` `GPT-6-Luna (High)` + `grok` + configured APIs) or `--models agy,codex,grok` for `$0` API-cost consultation (`codex-max` supported).
+   - **Architecture / domain analysis**: run [moa_runner.py](moa_runner.py) `--platform opencode --raw` (uses `Orchestrator (Neon)` via `agy` + `codex` `GPT-6-Luna (High)` + `grok` + configured APIs) or `--models agy,codex,grok` for `$0` API-cost consultation (`codex-max` supported).
 
 3. **Cold-Eyes Adversarial Verification Wave (`$0` marginal API tokens)**:
-   - Never trust worker self-reports. Once all slice workers finish, automatically pick a **cross-family reviewer** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` when a Gemini 4 model wrote the patch; `gemini-pro-orchestrator` when Claude wrote the patch; or `gpt-6-luna-high` / `codex-max` via ChatGPT `codex`):
+   - Never trust worker self-reports. Once all slice workers finish, automatically pick a **cross-family reviewer** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` when a Gemini 4 model wrote the patch; `gemini-pro-orchestrator-neon` when Claude wrote the patch; or `gpt-6-luna-high` / `codex-max` via ChatGPT `codex`):
      - **Automated diff review**: run `python3 "$W" review '<run-id>' --executor auto --model '<cross-family-reviewer>' --json` so a fresh read-only `--mode plan` session inspects the brief + `diff.patch` (automatically fails over across `agy` pools -> ChatGPT-authenticated `codex` `gpt-6-luna-high` -> `grok` / `--executor api` if `agy` is unavailable or exhausted; pass `--executor agy` or `--executor codex` to pin subscription-only, or `--executor api` for direct prepaid API failover).
      - **Sandboxed full test suite**: run `python3 "$W" verify '<run-id>' --full -- <project-test-command>`.
      - Optional host read-through: inspect `diff.patch` directly via `read` for flags (`protected_paths` including `.opencode`, `sensitive_paths`, `execution_surface`).

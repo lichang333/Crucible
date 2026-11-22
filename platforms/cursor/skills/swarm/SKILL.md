@@ -20,11 +20,11 @@ Your primary optimization goal is **high engineering quality while conserving Cu
    - **Avoid spawning multiple full-price Cursor writer subagents by default**: Cursor writer subagents consume Cursor request quota/usage per turn; prefer `agy_worker.py` workers for coding slices inside git repos.
    - Split multi-file work into **2–4 disjoint slices** (`<owned_files>` must not overlap) and launch concurrent `agy_worker.py run` processes in one turn.
    - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.cursor/skills/swarm/agy_worker.py" models`):
-     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — reserve `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
-     - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium`
-     - Standard L1/L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
-     - Deep algorithmic / multi-file synthesis: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
-     - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
+     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — reserve `Neon`, `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+     - Fast L1 / mechanical edits: `gemini-4-carbon-high` / `gemini-4-argon-high` or `gemini-4-carbon-medium`
+     - Standard L2 feature or bugfix slice: `gemini-4-neon-high` (fallback `gemini-4-carbon-high` or `claude-sonnet-5-5-high`)
+     - Deep algorithmic / multi-file synthesis: `gemini-4-neon-xhigh` or `gemini-4-hydrogen-xhigh`
+     - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator-neon` (`Orchestrator (Neon)`) or `gemini-pro-orchestrator` (`Orchestrator (Carbon)`)
      - **3-tier automatic quota / unsubscribed failover**:
        - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
        - **Tier 2 (`agy` pools exhausted / unsubscribed / uninstalled)**: automatically downgrade to the Cursor native host or scoped native subagents using healthy `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or `opencode/*-free`, plus `agy_worker.py review --executor auto` (which fails over at `$0` API spend to ChatGPT-authenticated **`codex`** `gpt-6-luna-high`, auto-preferring newer `/Applications/ChatGPT.app` bundled `codex`, and OpenCode **`grok`**, before `--executor api`; pass `--model codex-max` / `gpt-6-luna-max` for max-effort Codex review).
@@ -40,7 +40,7 @@ Your primary optimization goal is **high engineering quality while conserving Cu
    - **Architecture / domain analysis**: run [moa_runner.py](moa_runner.py) `--platform cursor --raw` (or `--models agy,codex,grok` for `$0` marginal API-cost consultation; `codex-max` supported).
 
 3. **Cold-Eyes Adversarial Verification Wave (`$0` marginal API tokens)**:
-   - Never trust worker self-reports. Once all slice workers finish, automatically pick a **cross-family reviewer** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` when a Gemini 4 model wrote the patch; `gemini-pro-orchestrator` when Claude wrote the patch; or `gpt-6-luna-high` / `codex-max` via ChatGPT `codex`):
+   - Never trust worker self-reports. Once all slice workers finish, automatically pick a **cross-family reviewer** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` when a Gemini 4 model wrote the patch; `gemini-pro-orchestrator-neon` when Claude wrote the patch; or `gpt-6-luna-high` / `codex-max` via ChatGPT `codex`):
      - **Automated diff review**: run `python3 "$W" review '<run-id>' --executor auto --model '<cross-family-reviewer>' --json` so a fresh read-only `--mode plan` session inspects the brief + `diff.patch` (automatically fails over across `agy` pools -> ChatGPT-authenticated `codex` `gpt-6-luna-high` -> `grok` / `--executor api` if `agy` is unavailable or exhausted; pass `--executor agy` or `--executor codex` to pin subscription-only, or `--executor api` for direct prepaid API failover).
      - **Sandboxed full test suite**: run `python3 "$W" verify '<run-id>' --full -- <project-test-command>`.
      - Inspect `diff.patch` and `REVIEW_FLAGS` (`protected_paths` including `.cursor` and `.opencode`, `sensitive_paths`, `execution_surface`).

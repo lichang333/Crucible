@@ -409,13 +409,13 @@ class RunnerTests(unittest.TestCase):
 
     def test_agy_adapter_calls_cli_in_plan_mode_without_network(self):
         settings = runner.load_config("headless")["providers"]["agy"]
-        self.assertEqual(settings["model"], "gemini-pro-orchestrator")
-        self.assertEqual(settings["display_name"], "Orchestrator (Carbon)")
+        self.assertEqual(settings["model"], "gemini-pro-orchestrator-neon")
+        self.assertEqual(settings["display_name"], "Orchestrator (Neon)")
 
         def fake_run(cmd, cwd=None, env=None, text=True, capture_output=True, timeout=None):
             self.assertIn("-p", cmd)
             self.assertIn("--model", cmd)
-            self.assertEqual(cmd[cmd.index("--model") + 1], "gemini-pro-orchestrator")
+            self.assertEqual(cmd[cmd.index("--model") + 1], "gemini-pro-orchestrator-neon")
             self.assertIn("--mode", cmd)
             self.assertEqual(cmd[cmd.index("--mode") + 1], "plan")
             self.assertIn("--disable-slash-commands", cmd)
@@ -429,7 +429,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("question", prompt_arg)
             return subprocess.CompletedProcess(
                 cmd, 0,
-                stdout=json.dumps({"status": "SUCCESS", "response": "agy carbon answer"}) + "\n",
+                stdout=json.dumps({"status": "SUCCESS", "response": "agy neon answer"}) + "\n",
                 stderr=""
             )
 
@@ -439,7 +439,7 @@ class RunnerTests(unittest.TestCase):
                 patch.object(runner.subprocess, "run", side_effect=fake_run) as mock_sub:
             answer = runner.call_model("agy", "question", "installed", settings["model"],
                                        system_prompt=runner.WORKER_RULES)
-            self.assertEqual(answer, "agy carbon answer")
+            self.assertEqual(answer, "agy neon answer")
             mock_sub.assert_called_once()
 
         def fail_run(cmd, cwd=None, env=None, text=True, capture_output=True, timeout=None):
@@ -460,9 +460,10 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(cfg["mode"], "raw")
         self.assertEqual(cfg["worker_defaults"], ["agy", "deepseek", "minimax"])
         self.assertEqual(cfg["reviewer"]["provider"], "agy")
-        self.assertEqual(cfg["reviewer"]["model"], "gemini-pro-orchestrator")
+        self.assertEqual(cfg["reviewer"]["model"], "gemini-pro-orchestrator-neon")
         self.assertEqual(cfg["agy_routes"]["l1"], "gemini-4-carbon-high")
-        self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator", "gemini-4-carbon-high"])
+        self.assertEqual(cfg["agy_routes"]["l2"], "gemini-4-neon-high")
+        self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator-neon", "gemini-4-neon-xhigh"])
 
     def test_cursor_profile_uses_agy_orchestrator_and_raw_mode(self):
         cfg = runner.load_config("cursor")
@@ -470,10 +471,11 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(cfg["worker_defaults"], ["agy", "codex", "grok", "glm", "deepseek", "kimi", "minimax"])
         self.assertEqual(runner.load_config("codex")["worker_defaults"], ["agy", "grok", "glm", "deepseek", "kimi", "minimax"])
         self.assertEqual(cfg["reviewer"]["provider"], "agy")
-        self.assertEqual(cfg["reviewer"]["model"], "gemini-pro-orchestrator")
+        self.assertEqual(cfg["reviewer"]["model"], "gemini-pro-orchestrator-neon")
         self.assertEqual(cfg["agy_routes"]["filler"], "gemini-4-argon-low")
         self.assertEqual(cfg["agy_routes"]["l1"], "gemini-4-carbon-high")
-        self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator", "gemini-4-carbon-high"])
+        self.assertEqual(cfg["agy_routes"]["l2"], "gemini-4-neon-high")
+        self.assertEqual(cfg["agy_routes"]["l3"], ["gemini-pro-orchestrator-neon", "gemini-4-neon-xhigh"])
 
     def test_codex_adapter_calls_cli_without_network(self):
         def fake_run(cmd, input=None, cwd=None, env=None, text=True, capture_output=True, timeout=None):
@@ -650,7 +652,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(record["reviewer_result"]["fallback_from"], "glm")
         self.assertEqual(
             [(f["provider"], f["model"]) for f in record["reviewer_fallbacks"]],
-            [("glm", "glm-5.3"), ("agy", "gemini-pro-orchestrator")],
+            [("glm", "glm-5.3"), ("agy", "gemini-pro-orchestrator-neon")],
         )
 
     def test_review_failover_when_primary_glm_lacks_key(self):

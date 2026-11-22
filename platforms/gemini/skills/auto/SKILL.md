@@ -10,7 +10,7 @@ It defines the isolation, review, verification and apply gates. The current Anti
 task; [routing](routing.json) supplies model roles.
 
 Route execution and review separately using the shared workflow's review criteria.
-Start with `native_roles.reviewer` from [routing](routing.json); for complex architecture use the configured planner (`gemini-pro-orchestrator`).
+Start with `native_roles.reviewer` from [routing](routing.json); for complex architecture use the configured planner (`gemini-pro-orchestrator-neon`).
 Use Antigravity's subagent tools (`invoke_subagent`) with an explicit model and a bounded brief.
 The current Antigravity coordinator dispatches, resolves findings, performs runtime checks and integrates the result.
 

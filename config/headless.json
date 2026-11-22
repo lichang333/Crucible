@@ -27,14 +27,14 @@
   "agy_routes": {
     "filler": "gemini-4-argon-low",
     "l1": "gemini-4-carbon-high",
-    "l2": "gemini-4-carbon-high",
-    "l3": ["gemini-pro-orchestrator", "gemini-4-carbon-high"]
+    "l2": "gemini-4-neon-high",
+    "l3": ["gemini-pro-orchestrator-neon", "gemini-4-neon-xhigh"]
   },
   "fallback_routes": {
     "filler": "gemini-4-argon-medium",
     "l1": "gemini-4-argon-high",
-    "l2": "gemini-4-hydrogen-high",
-    "l3": "gemini-pro-orchestrator-argon"
+    "l2": "gemini-4-carbon-high",
+    "l3": "gemini-pro-orchestrator"
   },
   "agy_alternatives": {
     "filler": [
@@ -62,8 +62,9 @@
       "gpt-oss-120b-medium"
     ],
     "l2": [
+      "gemini-4-carbon-high",
+      "gemini-pro-orchestrator-neon",
       "gemini-pro-orchestrator",
-      "gemini-4-neon-high",
       "gemini-4-hydrogen-xhigh",
       "gemini-4-hydrogen-high",
       "gemini-4-argon-high",
@@ -73,10 +74,10 @@
       "gpt-oss-120b-medium"
     ],
     "l3": [
-      "gemini-pro-orchestrator",
-      "gemini-pro-orchestrator-argon",
       "gemini-pro-orchestrator-neon",
       "gemini-4-neon-xhigh",
+      "gemini-pro-orchestrator",
+      "gemini-pro-orchestrator-argon",
       "gemini-4-hydrogen-xhigh",
       "claude-opus-5-5-high",
       "claude-opus-5-5-medium",
@@ -84,11 +85,12 @@
       "claude-sonnet-5-5-high"
     ],
     "review": [
+      "gemini-pro-orchestrator-neon",
       "gemini-pro-orchestrator",
       "gemini-pro-orchestrator-argon",
-      "gemini-pro-orchestrator-neon",
       "claude-opus-5-5-high",
       "claude-sonnet-5-5-high",
+      "gemini-4-neon-xhigh",
       "gemini-4-hydrogen-xhigh"
     ]
   },
@@ -102,12 +104,12 @@
     "funding": "prepaid_api"
   },
   "quota_handoff": {
-    "decider_candidates": ["gemini-pro-orchestrator", "gemini-pro-orchestrator-argon", "claude-opus-5-5-high"],
+    "decider_candidates": ["gemini-pro-orchestrator-neon", "gemini-pro-orchestrator", "gemini-pro-orchestrator-argon", "claude-opus-5-5-high"],
     "decision_required": true,
     "on_unavailable": "retain_and_report"
   },
   "providers": {
-    "agy": {"model": "gemini-pro-orchestrator", "display_name": "Orchestrator (Carbon)"},
+    "agy": {"model": "gemini-pro-orchestrator-neon", "display_name": "Orchestrator (Neon)"},
     "codex": {"model": "gpt-6-luna-high", "display_name": "GPT-6-Luna (High)"},
     "grok": {"model": "grok-4.7", "display_name": "Grok-4.7"},
     "glm": {"model": "glm-5.3", "display_name": "GLM-5.3"},

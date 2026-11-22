@@ -32,7 +32,7 @@ headless behavior.
 `--models` accepts comma-separated provider names (default active set: `agy`, `codex`, `grok`, `glm`, `deepseek`, `kimi`, `minimax`; the `codex` platform omits `codex` to avoid self-voting, `opencode` defaults to `agy`, `deepseek`, `minimax`, `deepseek-v4.1` / `deepseek-flash` (`DeepSeek-V4.1-Flash`) is selectable on-demand to avoid double-billing DeepSeek, and both `deepseek` and `kimi`—including `kimi-highspeed`—accept `-low`/`-high`/`-max` `reasoning_effort` selectors). Prefer a relevant subset when
 it suffices; the legacy default remains all configured providers. Keys are local
 to the shared `skills/moa/.env` or the existing environment/Desktop fallback.
-The `agy` provider executes locally in read-only `--mode plan` via `agy` (default model `gemini-pro-orchestrator`, `Orchestrator (Carbon)`) using the user's Google AI Ultra subscription without requiring an API key.
+The `agy` provider executes locally in read-only `--mode plan` via `agy` (default model `gemini-pro-orchestrator-neon`, `Orchestrator (Neon)`) using the user's Google AI Ultra subscription without requiring an API key.
 Use `--models agy/<model-id>` to choose an entry in the shared `agy_catalog`, including
 Gemini, Claude, and GPT-OSS. A catalog ID also works without the `agy/` prefix. Each
 run has one `agy` slot, which can be combined with other providers. Use `--show-config`

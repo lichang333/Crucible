@@ -23,11 +23,11 @@ Keep the current Antigravity coordinator turn lean as planner/integrator, and di
    - Native Antigravity subagents do not inherit `agy_guard.py` or standalone `$TMPDIR` git isolation; use `agy_worker.py` for delegated coding slices inside git repos.
    - Split multi-file work into **2–4 disjoint slices** (`OWNED FILES` must not overlap) and launch concurrent `agy_worker.py run --platform gemini` processes in one turn.
    - **Automatic per-slice model assignment** (inspect anytime with `python3 "$HOME/.gemini/config/skills/swarms/agy_worker.py" models`):
-     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — reserve `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
-     - Fast L1 / mechanical edits: `gemini-4-argon-high` or `gemini-4-carbon-medium`
-     - Standard L1/L2 feature or bugfix slice: `gemini-4-carbon-high` (or `claude-sonnet-5-5-high`)
-     - Deep algorithmic / multi-file synthesis: `gemini-4-hydrogen-xhigh` or `gemini-4-hydrogen-high`
-     - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator` (`Orchestrator (Carbon)`) or `gemini-pro-orchestrator-argon`
+     - Filler (mock data, comments, copy, boilerplate): `gemini-4-argon-low` (`agy_routes.filler`; or bridged `grok` / `deepseek-v4.1` for text) — reserve `Neon`, `Carbon`, `Hydrogen`, and `GPT-6-Luna` for core logic & review
+     - Fast L1 / mechanical edits: `gemini-4-carbon-high` / `gemini-4-argon-high` or `gemini-4-carbon-medium`
+     - Standard L2 feature or bugfix slice: `gemini-4-neon-high` (fallback `gemini-4-carbon-high` or `claude-sonnet-5-5-high`)
+     - Deep algorithmic / multi-file synthesis: `gemini-4-neon-xhigh` or `gemini-4-hydrogen-xhigh`
+     - L3 architecture / tricky root-cause debugging: `gemini-pro-orchestrator-neon` (`Orchestrator (Neon)`) or `gemini-pro-orchestrator` (`Orchestrator (Carbon)`)
      - **3-tier automatic quota / unsubscribed failover**:
        - **Tier 1 (`agy` dual quota pools)**: automatically fail over between **Gemini 4 / Orchestrator** and **Claude 5.5 / GPT-OSS 120B** (`gpt-oss-120b-medium`), preserving partial `diff.patch` files.
        - **Tier 2 (`agy` pools exhausted)**: automatically fail over `agy_worker.py review --executor auto` to bridged **`grok`** (`Grok-4.7` via signed-in OpenCode xAI subscription at `$0` API spend) or keyed APIs (`deepseek` / `deepseek-flash` / `glm` / `kimi` / `minimax`), and route coding to native Claude Code subscription (`claude_local.py`) or host L0/scoped edits if needed.
@@ -43,7 +43,7 @@ Keep the current Antigravity coordinator turn lean as planner/integrator, and di
    - **Architecture / domain analysis**: run [moa_runner.py](moa_runner.py) `--platform gemini --raw` (or `--models agy,grok` for `$0` marginal API-cost consultation).
 
 3. **Cold-Eyes Adversarial Verification Wave (`$0` marginal API tokens)**:
-   - Never trust worker self-reports. Once all slice workers finish, automatically pick a **cross-family reviewer** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` when a Gemini 4 model wrote the patch; `gemini-pro-orchestrator` when Claude wrote the patch; or `grok` when Claude quota runs low):
+   - Never trust worker self-reports. Once all slice workers finish, automatically pick a **cross-family reviewer** (`claude-opus-5-5-high` / `claude-sonnet-5-5-high` when a Gemini 4 model wrote the patch; `gemini-pro-orchestrator-neon` when Claude wrote the patch; or `grok` when Claude quota runs low):
      - **Automated diff review**: run `python3 "$W" review '<run-id>' --executor auto --model '<cross-family-reviewer>' --json` so a fresh read-only `--mode plan` session inspects the brief + `diff.patch` (automatically fails over across `agy` pools and falls back to `--executor api` / `grok` if `agy` pools are exhausted; pass `--executor agy` to pin subscription-only).
      - **Sandboxed full test suite**: run `python3 "$W" verify '<run-id>' --full -- <project-test-command>`.
      - Inspect `diff.patch` and `REVIEW_FLAGS` (`protected_paths` including `.gemini` and `.agents`, `sensitive_paths`, `execution_surface`).

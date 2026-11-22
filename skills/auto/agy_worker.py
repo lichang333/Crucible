@@ -1398,12 +1398,16 @@ def cmd_review(a):
     else:
         executor = "codex"
 
+    default_agy_model = (
+        ((load_headless_profile().get("providers") or {}).get("agy") or {}).get("model")
+        or "gemini-pro-orchestrator-neon"
+    )
     default_codex_model = (
         ((load_headless_profile().get("providers") or {}).get("codex") or {}).get("model")
         or "gpt-6-luna-high"
     )
     if executor == "agy":
-        model = requested_model or "gemini-pro-orchestrator"
+        model = requested_model or default_agy_model
     elif executor == "codex":
         raw_codex = a.model or default_codex_model
         model = codex_canon or parse_codex_model_spec(raw_codex)[2] or raw_codex
@@ -1415,7 +1419,7 @@ def cmd_review(a):
         elif codex_base is not None:
             model = codex_canon
         else:
-            model = requested_model or "gemini-pro-orchestrator"
+            model = requested_model or default_agy_model
 
     if not patch_text.strip():
         out = {"run": a.run_id, "executor": executor, "model": model, "status": "empty_patch",
@@ -1486,7 +1490,7 @@ def cmd_review(a):
                 review_filename, meta_key, banner = "api_review.json", "api_review", "API"
         else:
             agy_bin = find_agy_bin()
-            start_model = requested_model or "gemini-pro-orchestrator"
+            start_model = requested_model or default_agy_model
             review_text = None
             if not agy_bin:
                 fallbacks.append({
@@ -1496,7 +1500,7 @@ def cmd_review(a):
                 })
             else:
                 if start_model.startswith(("claude-", "gpt-oss-")):
-                    raw_cands = [start_model, "gemini-pro-orchestrator", "gpt-oss-120b-medium"]
+                    raw_cands = [start_model, default_agy_model, "gpt-oss-120b-medium"]
                 else:
                     raw_cands = [start_model, "claude-opus-5-5-high", "gpt-oss-120b-medium"]
                 for cand in dict.fromkeys(raw_cands):
@@ -1745,7 +1749,7 @@ def main():
     r.add_argument("--executor", choices=["agy", "api", "auto", "codex"],
                    help="review backend (auto tries agy cross-pool, ChatGPT codex, then api; agy uses Google AI Ultra; codex uses ChatGPT/Codex CLI; api uses moa_runner providers)")
     r.add_argument("--model", default=None,
-                   help="model for review (defaults to gemini-pro-orchestrator for agy/auto, grok/deepseek/glm/kimi/minimax for api, gpt-6-luna-high or gpt-6-luna-max for codex)")
+                   help="model for review (defaults to gemini-pro-orchestrator-neon for agy/auto, grok/deepseek/glm/kimi/minimax for api, gpt-6-luna-high or gpt-6-luna-max for codex)")
     r.add_argument("--timeout", type=int, default=600)
     r.add_argument("--json", action="store_true", help="output JSON review record")
     r.set_defaults(fn=cmd_review)

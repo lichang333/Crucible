@@ -451,7 +451,7 @@ worker.main()
     check("review --executor agy invokes agy in plan mode and saves agy_review.json",
           r.returncode == 0 and "Review Verdict: Acceptable (agy)" in r.stdout
           and os.path.isfile(agy_review_path)
-          and json.load(open(agy_review_path)).get("model") == "gemini-pro-orchestrator", r.stderr + r.stdout)
+          and json.load(open(agy_review_path)).get("model") == "gemini-pro-orchestrator-neon", r.stderr + r.stdout)
 
     # 14. Active agy catalog (`models`), profile loading via symlink, and model alias resolution.
     r = sh(*W, "models", "--json", check=False)
@@ -468,6 +468,8 @@ worker.main()
           and set(cat.get("agy_alternatives", {})) >= {"filler", "l1", "l2", "l3", "review"}
           and cat.get("agy_routes", {}).get("filler") == "gemini-4-argon-low"
           and cat.get("agy_routes", {}).get("l1") == "gemini-4-carbon-high"
+          and cat.get("agy_routes", {}).get("l2") == "gemini-4-neon-high"
+          and cat.get("agy_routes", {}).get("l3") == ["gemini-pro-orchestrator-neon", "gemini-4-neon-xhigh"]
           and bool(cat.get("fallback_routes")),
           r.stderr + r.stdout[:300])
 
@@ -782,7 +784,7 @@ worker.main()
             "with open(" + repr(auto_agy_calls) + ", 'a') as log:\n"
             "    log.write(json.dumps(args) + '\\n')\n"
             "m = args[args.index('--model') + 1] if '--model' in args else ''\n"
-            "if m == 'gemini-pro-orchestrator':\n"
+            "if m == 'gemini-pro-orchestrator-neon':\n"
             "    print(json.dumps({'status': 'ERROR', 'error': 'Individual quota reached'}))\n"
             "    sys.exit(1)\n"
             "print(json.dumps({'status': 'SUCCESS', 'response': f'Review Verdict: Acceptable ({m})'}))\n"
@@ -796,7 +798,7 @@ worker.main()
           and auto_agy_saved.get("executor") == "agy"
           and auto_agy_saved.get("model") == "claude-opus-5-5-high"
           and len(auto_agy_saved.get("fallbacks", [])) == 1
-          and auto_agy_saved["fallbacks"][0].get("model") == "gemini-pro-orchestrator"
+          and auto_agy_saved["fallbacks"][0].get("model") == "gemini-pro-orchestrator-neon"
           and "--dangerously-skip-permissions" not in auto_calls_raw,
           r_auto_agy.stderr + r_auto_agy.stdout)
 
@@ -822,7 +824,7 @@ worker.main()
           and auto_api_saved.get("executor") == "api"
           and auto_api_saved.get("provider") == "glm"
           and [fb.get("model") for fb in auto_api_saved.get("fallbacks", [])] == [
-              "gemini-pro-orchestrator", "claude-opus-5-5-high", "gpt-oss-120b-medium"
+              "gemini-pro-orchestrator-neon", "claude-opus-5-5-high", "gpt-oss-120b-medium"
           ],
           r_auto_api.stderr + r_auto_api.stdout)
 
@@ -1050,7 +1052,7 @@ worker.main()
           and auto_codex_saved.get("executor") == "codex"
           and auto_codex_saved.get("model") == "gpt-6-luna-high"
           and [fb.get("model") for fb in auto_codex_saved.get("fallbacks", [])] == [
-              "gemini-pro-orchestrator", "claude-opus-5-5-high", "gpt-oss-120b-medium"
+              "gemini-pro-orchestrator-neon", "claude-opus-5-5-high", "gpt-oss-120b-medium"
           ]
           and "-m" in auto_codex_argv and "gpt-6-luna" in auto_codex_argv
           and "-c" in auto_codex_argv and 'model_reasoning_effort="high"' in auto_codex_argv,
@@ -1082,7 +1084,7 @@ worker.main()
           and broken_codex_saved.get("executor") == "api"
           and broken_codex_saved.get("provider") == "glm"
           and [fb.get("model") for fb in broken_fallbacks] == [
-              "gemini-pro-orchestrator", "claude-opus-5-5-high", "gpt-oss-120b-medium", "gpt-6-luna-high"
+              "gemini-pro-orchestrator-neon", "claude-opus-5-5-high", "gpt-oss-120b-medium", "gpt-6-luna-high"
           ]
           and broken_fallbacks[-1].get("executor") == "codex"
           and "failed to launch codex" in broken_fallbacks[-1].get("error", ""),
