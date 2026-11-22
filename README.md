@@ -1,206 +1,159 @@
-# MoA — Shared Multi-Agent Workflows for Antigravity, OpenCode, Cursor, Claude Code, and Codex
+# Crucible
 
-Separate platform instructions, one shared implementation. The current host session
-triages tasks and integrates changes, while subscription-backed workers (**Google AI Ultra**
-via the signed-in `agy` CLI,
-ChatGPT-authenticated **`codex`** (`GPT-6-Luna (High)` / `gpt-6-luna-high` default plus
-`codex-max` / `gpt-6-luna-max` at zero API cost, auto-preferring newer
-`/Applications/ChatGPT.app` bundled `codex` over stale Homebrew binaries), bridged
-**`grok`** (`Grok-4.7` via signed-in OpenCode xAI OAuth only), optional prepaid APIs
-`glm` (`GLM-5.3`), `deepseek` (`DeepSeek-V4-Pro`,
-plus `deepseek-v4.1` / `deepseek-flash` for `DeepSeek-V4.1-Flash` & `deepseek-max` effort),
-`kimi` (`Kimi-K3.1-Pro` + `kimi-highspeed` & `kimi-max` effort when `MOONSHOT_API_KEY`/`KIMI_API_KEY` is set),
-and `minimax` (`MiniMax-M3`), and optional Claude Code subscription bridges) provide
-parallel Q&A analysis, isolated coding slices, and cross-family cold-eyes verification.
+Cross-platform multi-agent orchestration, sandboxed coding workers, and cross-family verification for **Antigravity (`agy`)**, **Codex**, **Claude Code**, **Cursor**, and **OpenCode** *(formerly MoA — `/moa`, `/auto`, `/swarm`, and `/swarms` commands remain unchanged)*.
 
-| Workflow | Purpose | Execution |
-|---|---|---|
-| `/moa` | Multi-model Q&A and analysis | Read-only `agy` (`Orchestrator (Neon)`) + `codex` (`GPT-6-Luna (High / Max)` via ChatGPT subscription) + `grok` (OpenCode xAI OAuth only) + configured API answers (`glm`/`deepseek`/`minimax`); current-session synthesis |
-| `/auto` | Delegated single-module coding | Isolated `agy` sandbox worker (or native Claude Code CLI / Claude cloud bridge); cross-family review + local `verify --full` & `apply --sha` |
-| `/swarm` / `/swarms` | Parallel multi-file orchestration | Codex prefers guarded `agy` implementation on explicit `/swarm` coding tasks and reviews in the current session. Antigravity / `agy` exposes `/swarms` (`always_on` rule, leaving `/swarm` for Antigravity's built-in Native Swarm UI), OpenCode (`default_agent: swarm`), and Cursor (`alwaysApply` rule + `swarm-coordinator`) use isolated `agy` slices with cross-family verification and quota failover |
+- **One source, five hosts**: Shared runners, configs, and workflow specs live in `skills/`, `config/`, and `shared/`; `install.sh` symlinks lightweight platform entrypoints into each host.
+- **Subscription-first routing**: Prioritizes zero-marginal-API-cost subscription pools (`agy`, ChatGPT `codex`, OpenCode `grok` OAuth) with tiered model assignment and 3-tier automatic failover.
+- **Sandboxed execution & patch gates**: Every delegated code edit runs inside a disposable shallow worktree with a default-deny guard (`agy_guard.py`), network-disabled macOS `sandbox-exec`, cross-family diff review, full sandbox verification, and SHA-locked apply.
+- **Evidence-based synthesis**: Multi-model Q&A collects independent answers without counting repeated claims as extra evidence, preserving unresolved disagreements.
 
-Provider models, active `agy` family tiers (`agy_catalog` / `agy_routes` / `agy_alternatives`),
-and role defaults live in `config/`; application profiles (`codex.json`, `claude.json`,
-`gemini.json`, `opencode.json`, `cursor.json`) inherit shared defaults from
-[headless.json](config/headless.json).
-
-The shared runners under `skills/` are platform-agnostic: any agent host can drive them
-directly, including Muse. Use `--platform headless` with the shared scripts when no platform
-entrypoint applies; platform folders are symlinks into the shared implementation.
-
-## Layout
-
-```text
-AGENTS.md / CLAUDE.md / GEMINI.md   platform-specific project entrypoints
-platforms/codex/skills/             Codex moa, auto and swarm skill entrypoints
-platforms/claude/skills/            Claude moa and auto skill entrypoints
-platforms/gemini/skills/            Antigravity / Gemini moa, auto and swarms skill entrypoints
-platforms/gemini/rules/             Antigravity / agy always_on triage rule (`swarm-coordinator.md`)
-platforms/opencode/skills/          OpenCode moa, auto and swarm skill entrypoints
-platforms/opencode/agents/          OpenCode primary agents (`swarm.md`)
-platforms/cursor/skills/            Cursor moa, auto and swarm skill entrypoints (ambient auto-invoke)
-platforms/cursor/agents/            Cursor proactive subagent (`swarm-coordinator.md`)
-platforms/cursor/rules/             Cursor always-apply triage rule (`swarm-coordinator.mdc`)
-shared/                             common project and workflow rules
-config/                             provider defaults (`headless.json`) and platform profiles
-skills/moa/                         shared API/agy runner and offline tests
-skills/auto/                        agy/native Claude executors, cloud bridge, guard, sandbox and tests
-tests/                              installer and platform package tests
+```mermaid
+flowchart LR
+  Hosts["Hosts (Antigravity / Codex / Claude / Cursor / OpenCode)"] --> Workflows["Workflows (/moa, /auto, /swarm, /swarms)"]
+  Workflows --> MoA["moa_runner.py (Q&A & Cross-Review)"]
+  Workflows --> Worker["agy_worker.py (Worktree + agy_guard + sandbox-exec)"]
+  MoA --> Pools["Pools (agy / codex / grok / DeepSeek / GLM / Kimi / MiniMax)"]
+  Worker --> Pools
+  Worker --> Gates["Gates (Cross-Family Review -> verify --full -> apply --sha)"]
 ```
 
-Platform folders link to shared scripts, workflow documents, and profiles. Edit the source
-in `skills/`, `shared/`, or `config/`; there are no copied implementations. API keys remain
-in the existing local `skills/moa/.env`, with no per-platform copy.
+## Workflows
 
-## Install or migrate
+| Workflow | Purpose | How it runs |
+|---|---|---|
+| `/moa` | Multi-model Q&A and trade-off analysis | Collects `agy` (`Orchestrator (Neon)`), `codex`, `grok`, and configured API workers (`deepseek`/`glm`/`kimi`/`minimax`), then synthesizes in the current host session |
+| `/auto` | Delegated single-module coding | Dispatches an isolated `agy` sandbox worker (or native Claude Code CLI / Claude cloud bridge), runs cross-family review, `verify --full`, and `apply --sha` |
+| `/swarm` / `/swarms` | Parallel multi-file orchestration | Splits work into disjoint slices across sandboxed workers with cross-family verification and quota failover *(Antigravity reserves `/swarm` for its built-in Native Swarm UI and exposes `/swarms`)* |
+
+## Quick Start
+
+### Prerequisites
+- **Python 3** and **Git**
+- **macOS `sandbox-exec`** for sandboxed coding worker execution and verification
+- At least one signed-in subscription CLI (`agy`, `codex`, OpenCode `xai` OAuth) or API key configured in `skills/moa/.env`
+
+### 1. Install platform entrypoints
 
 ```bash
 ./install.sh --dry-run
-./install.sh                         # all platforms (codex, claude, gemini, opencode, cursor)
-./install.sh --platform codex        # only Codex (moa, auto, swarm)
-./install.sh --platform claude       # only Claude
-./install.sh --platform gemini       # only Gemini / agy (moa, auto, swarms skills + always_on rule; alias: --platform agy)
-./install.sh --platform opencode     # only OpenCode (moa, auto, swarm skills + swarm agent)
-./install.sh --platform cursor       # only Cursor (moa, auto, swarm skills + agent + alwaysApply rule)
+./install.sh                    # all platforms (codex, claude, gemini, opencode, cursor)
+# Or install selectively: ./install.sh --platform gemini
 ```
 
-Install targets:
-- **Codex**: `~/.agents/skills/{moa,auto,swarm}`. Explicit `/swarm` coding tasks
-  prefer the guarded worker in [the Codex profile](config/codex.json), with
-  review in the current session. Parallel research uses native subagents.
-- **Claude**: `~/.claude/skills/{moa,auto}`
-- **Gemini / Antigravity (`agy`)**: `~/.gemini/config/skills/{moa,auto,swarms}` plus
-  `~/.gemini/config/rules/swarm-coordinator.md` (`trigger: always_on`, active across `agy` CLI,
-  Antigravity App, and Antigravity IDE without typing `/swarms`, leaving `/swarm` free for
-  Antigravity's built-in Native Swarm UI, with an automatic exemption for
-  delegated `agy_worker.py` sub-workers and subagents).
-- **OpenCode**: `~/.config/opencode/skills/{moa,auto,swarm}` plus
-  `~/.config/opencode/agents/swarm.md`. Set `"default_agent": "swarm"` in
-  `~/.config/opencode/opencode.jsonc` to enter `Swarm` directly without `/swarm` (`Tab` switches
-  between `Swarm`, `Build`, and `Plan`). Keep OpenCode's host model on `zhipu/glm-5.3`,
-  `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free`
-  (e.g., `opencode/glm-5.3-flash-free`) rather than OpenCode's built-in `google/*` provider,
-  which routes to Google AI Studio Free Tier (`limit: 0`) instead of your Google AI Ultra
-  (`agy`) subscription.
-- **Cursor**: `~/.cursor/skills/{moa,auto,swarm}`, `~/.cursor/agents/swarm-coordinator.md`, and
-  `~/.cursor/rules/swarm-coordinator.mdc` (`alwaysApply: true`). Cursor auto-invokes these
-  skills on matching prompts (without `disable-model-invocation: true`) or via `/swarm`,
-  `/auto`, and `/moa` (`Option + Enter` pins a skill for the session). To force unconditional
-  global triage before project rules load, you can also paste the short Coordinator rule into
-  **Cursor Settings > Rules > User Rules**.
-
-The installer replaces legacy shared Claude→Codex links with independent links, backs up
-conflicts under `~/.local/share/moa-install-backups/`, and preserves unrelated Gemini hooks.
-A Codex-only migration also detaches a recognized old managed Claude→Codex link so Claude
-does not silently start reading Codex instructions. Unselected platforms are left alone.
-
-The shared `agy` guard is registered in `~/.gemini/config/hooks.json` (inert unless
-`AUTO_WORKER=1` is set). An existing `skills/moa/.env` is preserved; when moving from an
-older installed checkout, its local key file is copied if the new checkout has none, otherwise
-`skills/moa/.env.example` is used. Old run records stay in their original checkout.
-
-## Inspect routes without calling models
+### 2. Inspect config and check provider health
 
 ```bash
-python3 skills/moa/moa_runner.py --platform cursor --show-config
-python3 skills/moa/moa_runner.py --platform opencode --dry-run
-python3 skills/moa/moa_runner.py --platform codex --models agy/gemini-4-neon-high --show-config
-python3 skills/auto/agy_worker.py models --json
+python3 skills/moa/moa_runner.py --doctor
 python3 skills/auto/agy_worker.py models --live
+python3 skills/moa/moa_runner.py --platform cursor --show-config
 ```
 
-These commands inspect configuration without calling models. `--live` asks `agy`
-which models are offered to the signed-in account.
-- [The shared catalog](config/headless.json) lists Gemini, Orchestrator, Claude 5.5,
-  and GPT-OSS variants. Use exact IDs with `agy_worker.py run --model` or `--models agy/<model-id>` in MoA.
-- **3-Tier Automatic Quota & Unsubscribed Failover**:
-  - **Tier 1 (`agy` dual quota pools)**: unless you explicitly name a model, the Coordinator
-    picks task-fit slice models and **cross-family reviewers** automatically (pairing Gemini 4 /
-    Orchestrator with Claude Opus/Sonnet 5.5 or GPT-OSS 120B) and switches quota pools
-    automatically on `429` or `quota_exhausted` while preserving partial `diff.patch` files.
-    `agy_worker.py` accepts canonical IDs, shorthands, and UI display names (via
-    `resolve_agy_model()`).
-  - **Tier 2 (`agy` unsubscribed / uninstalled / all pools exhausted)**: automatically downgrade
-    to OpenCode/Cursor native host or scoped native subagents using healthy `zhipu/glm-5.3`,
-    `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5` (subscription), or
-    `opencode/*-free`, and run `agy_worker.py review --executor auto` (cross-pool `agy`
-    failover -> ChatGPT-authenticated `codex` `gpt-6-luna-high` at `$0` spend -> `grok` /
-    `--executor api`, or explicit `--model codex-max` / `gpt-6-luna-max`).
-  - **Tier 3 (prepaid API balance/token exhausted or key expired)**: `/moa` (`moa_runner.py`
-    `--review` and `aggregate`) plus `agy_worker.py review --executor api` automatically fail
-    over across configured providers. Grok uses OpenCode xAI OAuth. The prepaid
-    choices include `deepseek`, `glm`, `kimi`, and `minimax`. In the OpenCode
-    TUI, switching to another healthy provider or `opencode/glm-5.3-flash-free` continues
-    seamlessly.
-- **Active subscription & API providers**: `agy` (Google AI Ultra), `codex` (`GPT-6-Luna (High)`
-  / `gpt-6-luna-high` default plus `codex-max` / `gpt-6-luna-max` via ChatGPT subscription,
-  auto-preferring `/Applications/ChatGPT.app` bundled `codex` over stale `/opt/homebrew/bin/codex`),
-  subscription `grok` (`Grok-4.7` via OpenCode `xai` OAuth only), and active
-  prepaid API fallbacks (`deepseek` / `DeepSeek-V4-Pro`, `deepseek-v4.1` / `DeepSeek-V4.1-Flash`
-  + `deepseek-max`, `glm` / `GLM-5.3`, `kimi` / `Kimi-K3.1-Pro` + `kimi-highspeed` / `kimi-max`, `minimax` / `MiniMax-M3`). Legacy direct `openai`, `anthropic`, and `gemini` API entries remain retired.
+### 3. Run in chat or from the CLI
 
-For API-backed Q&A, application profiles default to raw collection:
+- **In chat**: invoke `/moa <question>`, `/auto <module task>`, or `/swarms <multi-file goal>` (Antigravity, Cursor, and OpenCode also auto-triage prompts via installed rules/agents without typing a prefix).
+- **From CLI**:
 
 ```bash
-python3 skills/moa/moa_runner.py --platform cursor --models agy,deepseek,minimax --coordinator-model current --task-id example -- 'Question to compare'
+# Zero-marginal-API-cost second opinion via Google AI Ultra (Orchestrator Neon)
+python3 skills/moa/moa_runner.py --platform cursor --models agy -- 'Review this API boundary'
+
+# Compare multiple model families (raw mode for host synthesis)
+python3 skills/moa/moa_runner.py --platform gemini --models agy,codex,deepseek -- 'Compare locking strategies'
 ```
 
-Pass `--models agy` for zero-marginal-API-cost second opinions via `Orchestrator (Neon)`.
-Installed platform entrypoints infer their platform automatically even when `--platform` is
-omitted. Use `--platform headless` when an explicit paid API aggregator step is wanted.
+Use `--platform headless` with `moa_runner.py` when no platform entrypoint applies and an explicit API aggregator step is wanted.
 
-## Evidence-based analysis
+## Tiered Model Routing & Providers
 
-The [shared MoA workflow](shared/moa-workflow.md#evidence-based-collaboration) applies common
-evidence rules to independent workers, the optional single reviewer (`--review`), and host
-synthesis. Synthesis preserves unresolved disagreements and does not count repeated claims as
-independent evidence. No live tools or web access are assumed in offline worker prompts.
+Role defaults, active `agy` families, and failover routes are centralized in [config/headless.json](config/headless.json); platform profiles (`codex.json`, `claude.json`, `gemini.json`, `opencode.json`, `cursor.json`) inherit from it.
 
-The [four-stage experiment proposal](shared/evidence-review-proposal.md) describes independent
-answers → cross-review → revision → synthesis (`--cross-review`) using local evidence checks.
+### Tiered `agy` Routing Defaults
 
-## Coding execution and records
+| Tier / Role | Default Model | Notes / Fallback |
+|---|---|---|
+| `filler` (boilerplate, comments, mock data) | `gemini-4-argon-low` | Reserves Neon/Carbon/Hydrogen quota; fallback `gemini-4-argon-medium` |
+| `L1` (bounded fast edits) | `gemini-4-carbon-high` | Fallback `gemini-4-argon-high` |
+| `L2` (standard feature / slice coding) | `gemini-4-neon-high` | Fallback `gemini-4-carbon-high` or `claude-sonnet-5-5-high` |
+| `L3` (architecture / deep diagnosis) | `gemini-pro-orchestrator-neon` / `gemini-4-neon-xhigh` | Fallback `gemini-pro-orchestrator` |
+| `/moa` `agy` slot & Claude-author review | `gemini-pro-orchestrator-neon` (`Orchestrator (Neon)`) | `agy` runs read-only via `--mode plan` |
+| Gemini-author cross-family review | `claude-opus-5-5-high` / `claude-sonnet-5-5-high` | Falls back across `gpt-oss-120b-medium`, `codex`, `grok`, or APIs |
 
-`--platform <name>` identifies the coordinating host (`codex`, `claude`, `gemini`, `opencode`,
-`cursor`, or `headless`); executors are **agy**, **claude-local**, and **claude-cloud**,
-recorded separately. Delegated implementation follows the
-[shared coding workflow](shared/auto-workflow.md).
+Run `python3 skills/auto/agy_worker.py models --json` to inspect all 11 families / 27 canonical model IDs without calling any model.
 
-The `agy` executor provides disposable shallow worktrees, a default-deny PreToolUse guard
-(`agy_guard.py`), macOS `sandbox-exec` enforcement (`sandbox.sb`, network disabled), orphan
-process cleanup, cross-family read-only diff review (`review --executor auto` for cross-pool
-`agy` + ChatGPT `codex` `gpt-6-luna-high` + `--executor api` failover, or `review --executor agy`
-in `--mode plan` / `--executor codex` with `gpt-6-luna-high` or `gpt-6-luna-max` / `--executor api`),
-and whole-patch gates. Applying requires the reviewed SHA (`--sha`), full sandboxed
-verification (`verify --full`) against the current `HEAD`, clean target files, and protected
-path checks. Control directories including `.git`, `.claude`, `.codex`, `.opencode`,
-`.cursor`, `.gemini`, `.agents`, `.github`, `.vscode`, `.idea`, `venv`/`.venv`, and
-`node_modules` are protected case-insensitively at any depth.
+### Supported Providers
 
-Runs identify the platform, coordinator model (`current` when omitted), task ID, and
-executor. API records live under `skills/moa/runs/`; coding records and the run ledger remain
-under `skills/auto/runs/` and `runs.jsonl`. All run artifacts and `.env` files are ignored
-by Git.
+| Provider | Default Model | Auth / Billing | Effort & Variant Selectors |
+|---|---|---|---|
+| `agy` | `Orchestrator (Neon)` (`gemini-pro-orchestrator-neon`) | Local `agy` CLI (Google AI Ultra subscription) | `agy/<model-id>` or UI display names |
+| `codex` | `GPT-6-Luna (High)` (`gpt-6-luna-high`) | ChatGPT/Codex CLI (`ChatGPT.app` bundled CLI preferred) or `OPENAI_API_KEY` | `codex-max` / `gpt-6-luna-max`, `low`–`xhigh` |
+| `grok` | `Grok-4.7` (`grok-4.7`) | Signed-in OpenCode `xai` OAuth only | — |
+| `deepseek` | `DeepSeek-V4-Pro` | `DEEPSEEK_API_KEY` (prepaid API) | `deepseek-v4.1` / `deepseek-flash` (`DeepSeek-V4.1-Flash`), `-low`/`-high`/`-max` |
+| `glm` | `GLM-5.3` | `ZHIPUAI_API_KEY` (prepaid API) | — |
+| `kimi` | `Kimi-K3.1-Pro` | `MOONSHOT_API_KEY` or `KIMI_API_KEY` (prepaid API) | `kimi-highspeed`, `-low`/`-high`/`-max` |
+| `minimax` | `MiniMax-M3` | `MINIMAX_API_KEY` (prepaid API) | — |
 
-`agy` supports bounded same-session transport recovery (`--network-retries 0..2`, default `1`),
-preserving partial patches while failing closed on quota, auth, or safety/review flags.
+### 3-Tier Automatic Failover
+1. **Tier 1 (`agy` dual quota pools)**: Switches between **Gemini 4 / Orchestrator** and **Claude 5.5 / `gpt-oss-120b-medium`** on `429` or `quota_exhausted`, preserving partial `diff.patch` files.
+2. **Tier 2 (`agy` exhausted or unsubscribed)**: `review --executor auto` fails over to ChatGPT `codex` (`gpt-6-luna-high`) and OpenCode `grok` at zero marginal API cost before reaching API fallbacks; coding falls back to host or scoped subagents.
+3. **Tier 3 (prepaid API errors/exhaustion)**: `moa_runner.py` (`--review` / `aggregate`) and `agy_worker.py review --executor api` fail over across remaining configured providers (`deepseek` → `deepseek-flash` → `glm` → `kimi` → `minimax`).
 
-## Native Claude Code CLI & Claude Cloud Bridge
+## Security Sandbox, Patch Gates & Evidence Rules
 
-- **Native CLI (`claude_local.py`)**: uses first-party Claude Pro/Max allowance via a scoped
-  MCP file/test broker ([native CLI workflow](shared/claude-local-workflow.md)), with local
-  sandbox `verify --full` and `--sha` apply gates.
-- **Cloud Bridge (`claude_cloud.py`)**: supports `prepare`, `observe-funding` (single-use
-  non-stale panel observation), `launch` / `attach` / `send`, and sandbox-verified local
-  patch import ([cloud workflow](shared/cloud-workflow.md)).
+Delegated coding follows [shared/auto-workflow.md](shared/auto-workflow.md) through five strict gates:
+1. **Isolated worktree**: Each `agy_worker.py run` clones a disposable shallow worktree in `$TMPDIR`, keeping uncommitted host edits untouched.
+2. **Default-deny guard**: `agy_guard.py` restricts tools/paths and protects control directories (`.git`, `.claude`, `.codex`, `.opencode`, `.cursor`, `.gemini`, `.agents`, `.github`, `.vscode`, `.idea`, `venv`/`.venv`, `node_modules`) case-insensitively at any depth.
+3. **Network-disabled sandbox**: Commands execute under macOS `sandbox-exec` (`sandbox.sb`) with network disabled and bounded same-session transport recovery (`--network-retries 0..2`, default `1`).
+4. **Cross-family review**: Read-only review inspects the brief, `diff.patch`, and `REVIEW_FLAGS` before any patch is trusted.
+5. **Verified SHA apply**: `apply --sha` requires a matching reviewed patch hash, clean target paths, and a passing `verify --full` run against current `HEAD`.
 
-```bash
-python3 skills/auto/claude_cloud.py prepare --repo "$PWD" --brief '<brief.md>' --platform cursor
-python3 skills/auto/claude_cloud.py attach '<run-id>' --session '<Claude-cloud-session-URL>'
-python3 skills/auto/claude_cloud.py status '<run-id>'
+Run records are stored in `skills/moa/runs/` and `skills/auto/runs/` (`runs.jsonl`), all ignored by Git. For Q&A evidence rules and the 4-stage `--cross-review` protocol, see [shared/moa-workflow.md](shared/moa-workflow.md#evidence-based-collaboration) and [shared/evidence-review-proposal.md](shared/evidence-review-proposal.md).
+
+## Platform Install Targets
+
+| Platform | Installed Symlinks | Notes |
+|---|---|---|
+| **Antigravity / Gemini** (`--platform gemini` / `agy`) | `~/.gemini/config/skills/{moa,auto,swarms}` + `~/.gemini/config/rules/swarm-coordinator.md` | `always_on` triage rule; `/swarm` stays free for Native Swarm UI; guard hook registered in `~/.gemini/config/hooks.json` |
+| **Codex** | `~/.agents/skills/{moa,auto,swarm}` | Explicit `/swarm` coding tasks prefer guarded `agy` (`config/codex.json`); parallel research uses native subagents |
+| **Claude Code** | `~/.claude/skills/{moa,auto}` | Independent links (replaces legacy Claude→Codex links) |
+| **Cursor** | `~/.cursor/skills/{moa,auto,swarm}`, `~/.cursor/agents/swarm-coordinator.md`, `~/.cursor/rules/swarm-coordinator.mdc` | `alwaysApply: true` rule; skills remain auto-invocable |
+| **OpenCode** | `~/.config/opencode/skills/{moa,auto,swarm}` + `~/.config/opencode/agents/swarm.md` | Set `"default_agent": "swarm"` in `opencode.jsonc` for prefix-free triage |
+
+<details>
+<summary>Installer migrations, OpenCode/Cursor setup, and Claude Local/Cloud bridges</summary>
+
+- **Backups & `.env` handling**: `install.sh` backs up conflicts under `~/.local/share/moa-install-backups/`, preserves unrelated Gemini hooks, and keeps API keys solely in `skills/moa/.env` (copying from an older checkout if present, else seeding from `skills/moa/.env.example`).
+- **OpenCode host model**: Keep OpenCode's host on `zhipu/glm-5.3`, `deepseek/deepseek-v4-pro`, `minimax/MiniMax-M3`, `xai/grok-4.5`, or `opencode/*-free` rather than OpenCode's built-in `google/*` provider (which hits Google AI Studio Free Tier `limit: 0` instead of Google AI Ultra).
+- **Cursor User Rules**: To enforce triage before project rules load, paste the short Coordinator rule into **Cursor Settings > Rules > User Rules**.
+- **Native Claude Code CLI (`claude_local.py`)**: Uses first-party Claude Pro/Max allowance via a scoped MCP file/test broker ([shared/claude-local-workflow.md](shared/claude-local-workflow.md)) with local `verify --full` and `--sha` gates.
+- **Claude Cloud Bridge (`claude_cloud.py`)**: Supports `prepare`, `observe-funding`, `launch` / `attach` / `send`, and sandbox-verified local patch import ([shared/cloud-workflow.md](shared/cloud-workflow.md)):
+  ```bash
+  python3 skills/auto/claude_cloud.py prepare --repo "$PWD" --brief '<brief.md>' --platform cursor
+  python3 skills/auto/claude_cloud.py attach '<run-id>' --session '<Claude-cloud-session-URL>'
+  python3 skills/auto/claude_cloud.py status '<run-id>'
+  ```
+
+</details>
+
+## Repository Layout
+
+```text
+AGENTS.md / CLAUDE.md / GEMINI.md   platform-specific project entrypoints
+platforms/codex/skills/             Codex moa, auto, and swarm skill entrypoints
+platforms/claude/skills/            Claude moa and auto skill entrypoints
+platforms/gemini/                   Antigravity / Gemini skills (`moa`, `auto`, `swarms`) & `always_on` rule (aliased by `platforms/agy/`)
+platforms/opencode/                 OpenCode skills (`moa`, `auto`, `swarm`) & primary `swarm` agent
+platforms/cursor/                   Cursor skills (`moa`, `auto`, `swarm`), subagent, & `alwaysApply` rule
+shared/                             common project, evidence, sandbox, and bridge workflows
+config/                             provider/model catalog (`headless.json`) and per-host profiles
+docs/                               supplementary prompt templates (e.g. `chatgpt-moa-swarm-prompt.md`)
+skills/moa/                         shared MoA runner, evidence cross-review, and offline tests
+skills/auto/                        agy/Claude executors, guard, sandbox profile, recovery, and offline tests
+tests/                              installer and platform package verification suites
 ```
 
-## Offline verification
+Edit sources in `skills/`, `shared/`, or `config/`; platform folders contain symlinks, not duplicated code.
+
+## Offline Verification
 
 ```bash
 python3 skills/moa/test_runner.py
@@ -214,6 +167,4 @@ python3 tests/test_install.py
 python3 tests/test_platforms.py
 ```
 
-Runner tests mock providers; worker tests use mock CLIs and temporary git repos; installer
-tests use isolated temporary homes; sandbox tests require macOS `sandbox-exec`. None of these
-suites make live paid model calls.
+All suites use mocked providers/CLIs, temporary git repos, and isolated temporary homes with zero paid model calls (sandbox checks require macOS `sandbox-exec`).
