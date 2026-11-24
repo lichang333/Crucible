@@ -29,11 +29,11 @@ def main():
                     "gemini": user_home / ".gemini/config/skills",
                     "opencode": user_home / ".config/opencode/skills",
                     "cursor": user_home / ".cursor/skills"}
-    platform_skills = {"codex": ("moa", "auto", "swarm"),
-                       "claude": ("moa", "auto"),
-                       "gemini": ("moa", "auto", "swarms"),
-                       "opencode": ("moa", "auto", "swarm"),
-                       "cursor": ("moa", "auto", "swarm")}
+    platform_skills = {"codex": ("moa", "auto", "swarm", "orchestrator"),
+                       "claude": ("moa", "auto", "orchestrator"),
+                       "gemini": ("moa", "auto", "swarms", "orchestrator"),
+                       "opencode": ("moa", "auto", "swarm", "orchestrator"),
+                       "cursor": ("moa", "auto", "swarm", "orchestrator")}
     selected = "gemini" if args.platform == "agy" else args.platform
     platforms = tuple(destinations) if selected == "all" else (selected,)
     skill_links = [(repo / "platforms" / platform / "skills" / skill,
@@ -44,12 +44,18 @@ def main():
         agent_links.append((repo / "platforms/gemini/rules/swarm-coordinator.md",
                             user_home / ".gemini/config/rules/swarm-coordinator.md"))
     if "opencode" in platforms:
-        agent_links.append((repo / "platforms/opencode/agents/swarm.md",
-                            user_home / ".config/opencode/agents/swarm.md"))
+        agent_links.extend([
+            (repo / "platforms/opencode/agents/swarm.md",
+             user_home / ".config/opencode/agents/swarm.md"),
+            (repo / "platforms/opencode/agents/orchestrator.md",
+             user_home / ".config/opencode/agents/orchestrator.md"),
+        ])
     if "cursor" in platforms:
         agent_links.extend([
             (repo / "platforms/cursor/agents/swarm-coordinator.md",
              user_home / ".cursor/agents/swarm-coordinator.md"),
+            (repo / "platforms/cursor/agents/orchestrator.md",
+             user_home / ".cursor/agents/orchestrator.md"),
             (repo / "platforms/cursor/rules/swarm-coordinator.mdc",
              user_home / ".cursor/rules/swarm-coordinator.mdc"),
         ])

@@ -76,7 +76,7 @@
   `python3 ~/.cursor/skills/moa/moa_runner.py --platform cursor --raw --models deepseek-v4.1 -- "<生成假数据/注释/文案需求>"`
 
 当你后续帮我：
-1. **写发给 Cursor / Antigravity / OpenCode 的 `/swarm` 派单 Prompt** 时，请按 `L0 / filler / L1 / L2 / L3` 明确切片边界（`GOAL` / `CONTEXT` / `OWNED FILES` / `DO NOT TOUCH` / `ACCEPTANCE`），自动把杂活标为 `filler`（`gemini-4-argon-low`），把核心逻辑给 `Carbon` / `Hydrogen`，把冷眼审查留给 `codex` (`GPT-6-Luna`) / `claude` / `grok`，且提醒在 Claude 池 `429` 期间不要强绑 `claude-*` 为硬性必选写手。
+1. **写发给 Cursor / Antigravity / OpenCode / Codex 的 `/swarm`（或纯总控 `/orchestrator`）派单 Prompt** 时，请按 `L0 / filler / L1 / L2 / L3` 明确切片边界（`GOAL` / `CONTEXT` / `OWNED FILES` / `DO NOT TOUCH` / `ACCEPTANCE`），自动把杂活标为 `filler`（`gemini-4-argon-low`），把核心逻辑给 `Carbon` / `Neon` / `Hydrogen`，把冷眼审查留给 `codex` (`GPT-6-Luna`) / `claude` / `grok`（当使用 `/orchestrator` 纯总控模式或 OpenCode `Tab -> Orchestrator` 主代理时，连 1 文件微调也一并切片派工，宿主零直接改业务代码，只保留 Wave 调度与四重门禁验收）。
 2. **和我直接探讨技术难题或重构方案** 时，请先明确指出当前分析仅代表你单视角，并在需要交叉检验或查验本地代码时，顺手给我一段可直接复制的 `/moa` 或 `/swarm` 指令。
 请确认你已记住这套工作流与模型名册。接下来等我发给你具体任务需求时，再按上述规范为我输出设计建议、派单 Prompt 或审查清单。
 ```

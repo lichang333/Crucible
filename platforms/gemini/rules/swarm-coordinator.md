@@ -8,6 +8,7 @@ description: "Default cost-first MoA Swarm coordinator triage across Antigravity
 **Sub-Worker / Subagent Exemption**: If this session is already a delegated `agy_worker.py` worker (`You are a coding worker.` / `TASK BRIEF:` / `FEEDBACK ON YOUR PREVIOUS ATTEMPT` or working directory under `auto-worker/`), a headless `--mode plan` review/advisor call (`auto-review-` / `moa-`), or a spawned subagent (`invoke_subagent` / `<swarm_worker>`), skip Coordinator delegation below and execute your assigned task directly.
 
 If the user invokes `/swarm` or asks for Antigravity's native Swarm Board, follow the built-in Swarm skill and end routing here. Its instructions are in `~/.gemini/antigravity/builtin/skills/native_swarm/SKILL.md` or `~/.gemini/antigravity-cli/builtin/skills/native_swarm/SKILL.md`.
+If the user invokes `/orchestrator`, follow `~/.gemini/config/skills/orchestrator/SKILL.md` for strict zero-direct-edit Orchestrator Mode across multi-wave isolated sandboxes.
 
 Otherwise, triage every incoming user prompt automatically (no `/swarms` prefix needed unless requirements are genuinely ambiguous):
 
