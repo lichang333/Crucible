@@ -1,6 +1,6 @@
 # Crucible
 
-Cross-platform multi-agent orchestration, sandboxed coding workers, and cross-family verification for **Antigravity (`agy`)**, **Codex**, **Claude Code**, **Cursor**, and **OpenCode** *(formerly MoA — `/moa`, `/auto`, `/swarm`, and `/swarms` commands remain unchanged)*.
+Cross-platform multi-agent orchestration, sandboxed coding workers, and cross-family verification for **Antigravity (`agy`)**, **Codex**, **Claude Code**, **Cursor**, and **OpenCode** *(formerly MoA — `/moa`, `/auto`, `/swarm`, `/swarms`, and `/orchestrator` commands supported across hosts)*.
 
 - **One source, five hosts**: Shared runners, configs, and workflow specs live in `skills/`, `config/`, and `shared/`; `install.sh` symlinks lightweight platform entrypoints into each host.
 - **Subscription-first routing**: Prioritizes zero-marginal-API-cost subscription pools (`agy`, ChatGPT `codex`, OpenCode `grok` OAuth) with tiered model assignment and 3-tier automatic failover.
@@ -9,7 +9,7 @@ Cross-platform multi-agent orchestration, sandboxed coding workers, and cross-fa
 
 ```mermaid
 flowchart LR
-  Hosts["Hosts (Antigravity / Codex / Claude / Cursor / OpenCode)"] --> Workflows["Workflows (/moa, /auto, /swarm, /swarms)"]
+  Hosts["Hosts (Antigravity / Codex / Claude / Cursor / OpenCode)"] --> Workflows["Workflows (/moa, /auto, /swarm, /swarms, /orchestrator)"]
   Workflows --> MoA["moa_runner.py (Q&A & Cross-Review)"]
   Workflows --> Worker["agy_worker.py (Worktree + agy_guard + sandbox-exec)"]
   MoA --> Pools["Pools (agy / codex / grok / DeepSeek / GLM / Kimi / MiniMax)"]
@@ -24,6 +24,7 @@ flowchart LR
 | `/moa` | Multi-model Q&A and trade-off analysis | Collects `agy` (`Orchestrator (Neon)`), `codex`, `grok`, and configured API workers (`deepseek`/`glm`/`kimi`/`minimax`), then synthesizes in the current host session |
 | `/auto` | Delegated single-module coding | Dispatches an isolated `agy` sandbox worker (or native Claude Code CLI / Claude cloud bridge), runs cross-family review, `verify --full`, and `apply --sha` |
 | `/swarm` / `/swarms` | Parallel multi-file orchestration | Splits work into disjoint slices across sandboxed workers with cross-family verification and quota failover *(Antigravity reserves `/swarm` for its built-in Native Swarm UI and exposes `/swarms`)* |
+| `/orchestrator` | Pure control-plane Orchestrator Mode | Zero direct business-code edits on the host: multi-wave DAG planning, worker dispatch, cross-family review, `verify --full`, and sequential `apply --sha` across all 5 hosts (plus OpenCode `Tab -> Orchestrator` & Cursor `orchestrator` subagent) |
 
 ## Quick Start
 
@@ -112,11 +113,11 @@ Run records are stored in `skills/moa/runs/` and `skills/auto/runs/` (`runs.json
 
 | Platform | Installed Symlinks | Notes |
 |---|---|---|
-| **Antigravity / Gemini** (`--platform gemini` / `agy`) | `~/.gemini/config/skills/{moa,auto,swarms}` + `~/.gemini/config/rules/swarm-coordinator.md` | `always_on` triage rule; `/swarm` stays free for Native Swarm UI; guard hook registered in `~/.gemini/config/hooks.json` |
-| **Codex** | `~/.agents/skills/{moa,auto,swarm}` | Explicit `/swarm` coding tasks prefer guarded `agy` (`config/codex.json`); parallel research uses native subagents |
-| **Claude Code** | `~/.claude/skills/{moa,auto}` | Independent links (replaces legacy Claude→Codex links) |
-| **Cursor** | `~/.cursor/skills/{moa,auto,swarm}`, `~/.cursor/agents/swarm-coordinator.md`, `~/.cursor/rules/swarm-coordinator.mdc` | `alwaysApply: true` rule; skills remain auto-invocable |
-| **OpenCode** | `~/.config/opencode/skills/{moa,auto,swarm}` + `~/.config/opencode/agents/swarm.md` | Set `"default_agent": "swarm"` in `opencode.jsonc` for prefix-free triage |
+| **Antigravity / Gemini** (`--platform gemini` / `agy`) | `~/.gemini/config/skills/{moa,auto,swarms,orchestrator}` + `~/.gemini/config/rules/swarm-coordinator.md` | `always_on` triage rule; `/swarm` stays free for Native Swarm UI; guard hook registered in `~/.gemini/config/hooks.json` |
+| **Codex** | `~/.agents/skills/{moa,auto,swarm,orchestrator}` | Explicit `/swarm` and `/orchestrator` coding tasks prefer guarded `agy` (`config/codex.json`); parallel research uses native subagents |
+| **Claude Code** | `~/.claude/skills/{moa,auto,orchestrator}` | Independent links (replaces legacy Claude→Codex links) |
+| **Cursor** | `~/.cursor/skills/{moa,auto,swarm,orchestrator}`, `~/.cursor/agents/{swarm-coordinator,orchestrator}.md`, `~/.cursor/rules/swarm-coordinator.mdc` | `alwaysApply: true` rule; skills remain auto-invocable |
+| **OpenCode** | `~/.config/opencode/skills/{moa,auto,swarm,orchestrator}` + `~/.config/opencode/agents/{swarm,orchestrator}.md` | Set `"default_agent": "swarm"` (or `Tab` to `Orchestrator`) in `opencode.jsonc` |
 
 <details>
 <summary>Installer migrations, OpenCode/Cursor setup, and Claude Local/Cloud bridges</summary>
@@ -138,11 +139,11 @@ Run records are stored in `skills/moa/runs/` and `skills/auto/runs/` (`runs.json
 
 ```text
 AGENTS.md / CLAUDE.md / GEMINI.md   platform-specific project entrypoints
-platforms/codex/skills/             Codex moa, auto, and swarm skill entrypoints
-platforms/claude/skills/            Claude moa and auto skill entrypoints
-platforms/gemini/                   Antigravity / Gemini skills (`moa`, `auto`, `swarms`) & `always_on` rule (aliased by `platforms/agy/`)
-platforms/opencode/                 OpenCode skills (`moa`, `auto`, `swarm`) & primary `swarm` agent
-platforms/cursor/                   Cursor skills (`moa`, `auto`, `swarm`), subagent, & `alwaysApply` rule
+platforms/codex/skills/             Codex moa, auto, swarm, and orchestrator skill entrypoints
+platforms/claude/skills/            Claude moa, auto, and orchestrator skill entrypoints
+platforms/gemini/                   Antigravity / Gemini skills (`moa`, `auto`, `swarms`, `orchestrator`) & `always_on` rule (aliased by `platforms/agy/`)
+platforms/opencode/                 OpenCode skills (`moa`, `auto`, `swarm`, `orchestrator`) & primary agents (`swarm`, `orchestrator`)
+platforms/cursor/                   Cursor skills (`moa`, `auto`, `swarm`, `orchestrator`), subagents (`swarm-coordinator`, `orchestrator`), & `alwaysApply` rule
 shared/                             common project, evidence, sandbox, and bridge workflows
 config/                             provider/model catalog (`headless.json`) and per-host profiles
 docs/                               supplementary prompt templates (e.g. `chatgpt-moa-swarm-prompt.md`)

@@ -675,8 +675,9 @@ def default_platform():
     # entrypoint directory: resolving the file itself would erase the platform.
     entry_dir = Path(__file__).absolute().parent.resolve()
     for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
-        if entry_dir == SKILL_DIR.parent.parent / "platforms" / platform / "skills" / "moa":
-            return platform
+        for skill in ("moa", "swarm", "swarms", "orchestrator"):
+            if entry_dir == SKILL_DIR.parent.parent / "platforms" / platform / "skills" / skill:
+                return platform
     return "headless"
 
 

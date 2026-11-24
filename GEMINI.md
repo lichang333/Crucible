@@ -2,10 +2,10 @@
 
 Read [the shared project conventions](shared/project-conventions.md) when working in this repository.
 
-Antigravity / Gemini entrypoints live in `platforms/gemini/skills/` (`moa`, `auto`, `swarms`; `/swarm` remains Antigravity's built-in Native Swarm UI)
+Antigravity / Gemini entrypoints live in `platforms/gemini/skills/` (`moa`, `auto`, `swarms`, `orchestrator`; `/swarm` remains Antigravity's built-in Native Swarm UI)
 and `platforms/gemini/rules/swarm-coordinator.md` (aliased via `platforms/agy/`); OpenCode entrypoints live in `platforms/opencode/skills/` and
-`platforms/opencode/agents/swarm.md`; Cursor entrypoints live in `platforms/cursor/skills/`,
-`platforms/cursor/agents/swarm-coordinator.md`, and `platforms/cursor/rules/swarm-coordinator.mdc`;
+`platforms/opencode/agents/{swarm,orchestrator}.md`; Cursor entrypoints live in `platforms/cursor/skills/`,
+`platforms/cursor/agents/{swarm-coordinator,orchestrator}.md`, and `platforms/cursor/rules/swarm-coordinator.mdc`;
 Claude entrypoints live in `platforms/claude/skills/`; Codex entrypoints live in
 `platforms/codex/skills/`. Shared Python and sandbox code stays in `skills/`.
 Edit the shared source rather than copying implementations into platform folders.

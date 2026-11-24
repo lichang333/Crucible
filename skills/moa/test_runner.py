@@ -322,18 +322,19 @@ class RunnerTests(unittest.TestCase):
     def test_platform_entrypoints_infer_raw_without_platform_argument(self):
         repo = runner.SKILL_DIR.parent.parent
         for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
-            platform_dir = repo / "platforms" / platform / "skills" / "moa"
-            installed = self.root / platform / ".agents" / "skills" / "moa"
-            installed.parent.mkdir(parents=True)
-            installed.symlink_to(platform_dir, target_is_directory=True)
-            for entry in (platform_dir / "moa_runner.py", installed / "moa_runner.py"):
-                with self.subTest(platform=platform, entry=str(entry)):
-                    process = subprocess.run([sys.executable, str(entry), "--show-config"],
-                                             capture_output=True, text=True, env={})
-                    self.assertEqual(process.returncode, 0, process.stderr)
-                    config = json.loads(process.stdout)
-                    self.assertEqual(config["platform"], platform)
-                    self.assertEqual(config["mode"], "raw")
+            for skill in ("moa", "orchestrator"):
+                platform_dir = repo / "platforms" / platform / "skills" / skill
+                installed = self.root / platform / ".agents" / "skills" / skill
+                installed.parent.mkdir(parents=True, exist_ok=True)
+                installed.symlink_to(platform_dir, target_is_directory=True)
+                for entry in (platform_dir / "moa_runner.py", installed / "moa_runner.py"):
+                    with self.subTest(platform=platform, skill=skill, entry=str(entry)):
+                        process = subprocess.run([sys.executable, str(entry), "--show-config"],
+                                                 capture_output=True, text=True, env={})
+                        self.assertEqual(process.returncode, 0, process.stderr)
+                        config = json.loads(process.stdout)
+                        self.assertEqual(config["platform"], platform)
+                        self.assertEqual(config["mode"], "raw")
 
     def test_core_keeps_headless_default_and_explicit_platform_always_wins(self):
         repo = runner.SKILL_DIR.parent.parent

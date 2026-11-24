@@ -31,7 +31,7 @@ class InstallTests(unittest.TestCase):
         self.write("skills/moa/.env.example", "EXAMPLE_API_KEY=\n")
         self.write("skills/auto/agy_guard.py", "#!/usr/bin/env python3\n")
         for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
-            skills = ("moa", "auto", "swarms") if platform == "gemini" else ("moa", "auto", "swarm") if platform in ("codex", "opencode", "cursor") else ("moa", "auto")
+            skills = ("moa", "auto", "swarms", "orchestrator") if platform == "gemini" else ("moa", "auto", "swarm", "orchestrator") if platform in ("codex", "opencode", "cursor") else ("moa", "auto", "orchestrator")
             for skill in skills:
                 self.write(f"platforms/{platform}/skills/{skill}/SKILL.md",
                            f"{platform}: {skill}\n")
@@ -39,8 +39,12 @@ class InstallTests(unittest.TestCase):
                    "---\ntrigger: always_on\ndescription: swarm\n---\nswarm\n")
         self.write("platforms/opencode/agents/swarm.md",
                    "---\ndescription: swarm\nmode: primary\n---\nswarm\n")
+        self.write("platforms/opencode/agents/orchestrator.md",
+                   "---\ndescription: orchestrator\nmode: primary\n---\norchestrator\n")
         self.write("platforms/cursor/agents/swarm-coordinator.md",
                    "---\nname: swarm-coordinator\ndescription: swarm\n---\nswarm\n")
+        self.write("platforms/cursor/agents/orchestrator.md",
+                   "---\nname: orchestrator\ndescription: orchestrator\n---\norchestrator\n")
         self.write("platforms/cursor/rules/swarm-coordinator.mdc",
                    "---\ndescription: swarm\nalwaysApply: true\n---\nswarm\n")
 
@@ -91,7 +95,7 @@ class InstallTests(unittest.TestCase):
                      else ".config/opencode" if platform == "opencode"
                      else ".cursor" if platform == "cursor"
                      else ".gemini/config")
-        skills = ("moa", "auto", "swarms") if platform == "gemini" else ("moa", "auto", "swarm") if platform in ("codex", "opencode", "cursor") else ("moa", "auto")
+        skills = ("moa", "auto", "swarms", "orchestrator") if platform == "gemini" else ("moa", "auto", "swarm", "orchestrator") if platform in ("codex", "opencode", "cursor") else ("moa", "auto", "orchestrator")
         for skill in skills:
             path = self.user_home / directory / "skills" / skill
             self.assertTrue(path.is_symlink())
@@ -103,15 +107,17 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(os.readlink(rule_path),
                              str(self.repo / "platforms/gemini/rules/swarm-coordinator.md"))
         if platform == "opencode":
-            agent_path = self.user_home / ".config/opencode/agents/swarm.md"
-            self.assertTrue(agent_path.is_symlink())
-            self.assertEqual(os.readlink(agent_path),
-                             str(self.repo / "platforms/opencode/agents/swarm.md"))
+            for agent_file in ("swarm.md", "orchestrator.md"):
+                agent_path = self.user_home / ".config/opencode/agents" / agent_file
+                self.assertTrue(agent_path.is_symlink())
+                self.assertEqual(os.readlink(agent_path),
+                                 str(self.repo / "platforms/opencode/agents" / agent_file))
         if platform == "cursor":
-            agent_path = self.user_home / ".cursor/agents/swarm-coordinator.md"
-            self.assertTrue(agent_path.is_symlink())
-            self.assertEqual(os.readlink(agent_path),
-                             str(self.repo / "platforms/cursor/agents/swarm-coordinator.md"))
+            for agent_file in ("swarm-coordinator.md", "orchestrator.md"):
+                agent_path = self.user_home / ".cursor/agents" / agent_file
+                self.assertTrue(agent_path.is_symlink())
+                self.assertEqual(os.readlink(agent_path),
+                                 str(self.repo / "platforms/cursor/agents" / agent_file))
             rule_path = self.user_home / ".cursor/rules/swarm-coordinator.mdc"
             self.assertTrue(rule_path.is_symlink())
             self.assertEqual(os.readlink(rule_path),
@@ -368,11 +374,14 @@ class InstallTests(unittest.TestCase):
 
     def test_opencode_agent_conflict_is_backed_up(self):
         self.write(".config/opencode/agents/swarm.md", "existing swarm agent", home=True)
+        self.write(".config/opencode/agents/orchestrator.md", "existing orchestrator agent", home=True)
         self.invoke("--platform", "opencode")
         self.assert_installed("opencode")
         saved = {path.name: path for path in self.backups()}
         self.assertEqual(saved[".config_opencode_agents_swarm.md"].read_text(),
                          "existing swarm agent")
+        self.assertEqual(saved[".config_opencode_agents_orchestrator.md"].read_text(),
+                         "existing orchestrator agent")
 
     def test_missing_opencode_agent_fails_preflight(self):
         (self.repo / "platforms/opencode/agents/swarm.md").unlink()
@@ -381,19 +390,36 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(before, self.snapshot())
         self.assertIn("missing agent entry point", result.stderr)
 
+    def test_missing_opencode_orchestrator_agent_fails_preflight(self):
+        (self.repo / "platforms/opencode/agents/orchestrator.md").unlink()
+        before = self.snapshot()
+        result = self.invoke("--platform", "opencode", success=False)
+        self.assertEqual(before, self.snapshot())
+        self.assertIn("missing agent entry point", result.stderr)
+
     def test_cursor_agent_and_rule_conflicts_are_backed_up(self):
         self.write(".cursor/agents/swarm-coordinator.md", "existing cursor agent", home=True)
+        self.write(".cursor/agents/orchestrator.md", "existing cursor orchestrator", home=True)
         self.write(".cursor/rules/swarm-coordinator.mdc", "existing cursor rule", home=True)
         self.invoke("--platform", "cursor")
         self.assert_installed("cursor")
         saved = {path.name: path for path in self.backups()}
         self.assertEqual(saved[".cursor_agents_swarm-coordinator.md"].read_text(),
                          "existing cursor agent")
+        self.assertEqual(saved[".cursor_agents_orchestrator.md"].read_text(),
+                         "existing cursor orchestrator")
         self.assertEqual(saved[".cursor_rules_swarm-coordinator.mdc"].read_text(),
                          "existing cursor rule")
 
     def test_missing_cursor_agent_fails_preflight(self):
         (self.repo / "platforms/cursor/agents/swarm-coordinator.md").unlink()
+        before = self.snapshot()
+        result = self.invoke("--platform", "cursor", success=False)
+        self.assertEqual(before, self.snapshot())
+        self.assertIn("missing agent entry point", result.stderr)
+
+    def test_missing_cursor_orchestrator_agent_fails_preflight(self):
+        (self.repo / "platforms/cursor/agents/orchestrator.md").unlink()
         before = self.snapshot()
         result = self.invoke("--platform", "cursor", success=False)
         self.assertEqual(before, self.snapshot())

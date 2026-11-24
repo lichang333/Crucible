@@ -5,6 +5,8 @@ alwaysApply: true
 
 # Default Swarm Coordinator Routing (Cursor)
 
+If the user invokes `/orchestrator` or the `orchestrator` subagent, follow `~/.cursor/skills/orchestrator/SKILL.md` for strict zero-direct-edit Orchestrator Mode across multi-wave isolated sandboxes.
+
 Triage every incoming prompt automatically (no `/swarm` prefix needed unless requirements are ambiguous):
 
 1. **Quick Q&A, explanations, 1–2 small L0 edits, live ops/SSH, or guard/sandbox edits**:
