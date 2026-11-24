@@ -115,7 +115,7 @@ Run records are stored in `skills/moa/runs/` and `skills/auto/runs/` (`runs.json
 |---|---|---|
 | **Antigravity / Gemini** (`--platform gemini` / `agy`) | `~/.gemini/config/skills/{moa,auto,swarms,orchestrator}` + `~/.gemini/config/rules/swarm-coordinator.md` | `always_on` triage rule; `/swarm` stays free for Native Swarm UI; guard hook registered in `~/.gemini/config/hooks.json` |
 | **Codex** | `~/.agents/skills/{moa,auto,swarm,orchestrator}` | Explicit `/swarm` and `/orchestrator` coding tasks prefer guarded `agy` (`config/codex.json`); parallel research uses native subagents |
-| **Claude Code** | `~/.claude/skills/{moa,auto,orchestrator}` | Independent links (replaces legacy Claude→Codex links) |
+| **Claude Code** | `~/.claude/skills/{moa,auto,swarm,orchestrator}` | Independent links (replaces legacy Claude→Codex links) |
 | **Cursor** | `~/.cursor/skills/{moa,auto,swarm,orchestrator}`, `~/.cursor/agents/{swarm-coordinator,orchestrator}.md`, `~/.cursor/rules/swarm-coordinator.mdc` | `alwaysApply: true` rule; skills remain auto-invocable |
 | **OpenCode** | `~/.config/opencode/skills/{moa,auto,swarm,orchestrator}` + `~/.config/opencode/agents/{swarm,orchestrator}.md` | Set `"default_agent": "swarm"` (or `Tab` to `Orchestrator`) in `opencode.jsonc` |
 
@@ -140,7 +140,7 @@ Run records are stored in `skills/moa/runs/` and `skills/auto/runs/` (`runs.json
 ```text
 AGENTS.md / CLAUDE.md / GEMINI.md   platform-specific project entrypoints
 platforms/codex/skills/             Codex moa, auto, swarm, and orchestrator skill entrypoints
-platforms/claude/skills/            Claude moa, auto, and orchestrator skill entrypoints
+platforms/claude/skills/            Claude moa, auto, swarm, and orchestrator skill entrypoints
 platforms/gemini/                   Antigravity / Gemini skills (`moa`, `auto`, `swarms`, `orchestrator`) & `always_on` rule (aliased by `platforms/agy/`)
 platforms/opencode/                 OpenCode skills (`moa`, `auto`, `swarm`, `orchestrator`) & primary agents (`swarm`, `orchestrator`)
 platforms/cursor/                   Cursor skills (`moa`, `auto`, `swarm`, `orchestrator`), subagents (`swarm-coordinator`, `orchestrator`), & `alwaysApply` rule
