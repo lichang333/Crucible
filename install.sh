@@ -30,7 +30,7 @@ def main():
                     "opencode": user_home / ".config/opencode/skills",
                     "cursor": user_home / ".cursor/skills"}
     platform_skills = {"codex": ("moa", "auto", "swarm", "orchestrator"),
-                       "claude": ("moa", "auto", "orchestrator"),
+                       "claude": ("moa", "auto", "swarm", "orchestrator"),
                        "gemini": ("moa", "auto", "swarms", "orchestrator"),
                        "opencode": ("moa", "auto", "swarm", "orchestrator"),
                        "cursor": ("moa", "auto", "swarm", "orchestrator")}

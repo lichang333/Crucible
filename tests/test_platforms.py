@@ -54,7 +54,7 @@ class PlatformPackages(unittest.TestCase):
                     self.assertTrue((orch_entry / name).is_file(), name)
                     self.assertEqual((orch_entry / name).resolve(), source.resolve())
 
-        for platform in ("codex", "gemini", "opencode", "cursor"):
+        for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
             skill_name = "swarms" if platform == "gemini" else "swarm"
             swarm_entry = ROOT / "platforms" / platform / "skills" / skill_name
             with self.subTest(platform=platform, skill=skill_name):
@@ -69,6 +69,12 @@ class PlatformPackages(unittest.TestCase):
                     self.assertTrue(skill_text.startswith("---\n"))
                     self.assertIn("name: swarm", skill_text.split("---\n", 2)[1])
                 else:
+                    if platform == "claude":
+                        skill_text = (swarm_entry / "SKILL.md").read_text()
+                        self.assertTrue(skill_text.startswith("---\n"))
+                        skill_fm = skill_text.split("---\n", 2)[1]
+                        self.assertIn("name: swarm", skill_fm)
+                        self.assertIn("description:", skill_fm)
                     swarm_expected.update({
                         "moa_runner.py": ROOT / "skills/moa/moa_runner.py",
                         "auto-workflow.md": ROOT / "shared/auto-workflow.md",
@@ -128,6 +134,18 @@ class PlatformPackages(unittest.TestCase):
                     [sys.executable, str(entry / "orchestrator/agy_worker.py"), "run", "--help"],
                     text=True, capture_output=True, check=True,
                 )
+                if platform == "claude":
+                    swarm_preview = subprocess.run(
+                        [sys.executable, str(entry / "swarm/moa_runner.py"), "--show-config"],
+                        text=True, capture_output=True, check=True,
+                    )
+                    swarm_config = json.loads(swarm_preview.stdout)
+                    self.assertEqual(swarm_config["mode"], "raw")
+                    self.assertEqual(swarm_config["platform"], "claude")
+                    subprocess.run(
+                        [sys.executable, str(entry / "swarm/agy_worker.py"), "run", "--help"],
+                        text=True, capture_output=True, check=True,
+                    )
 
     def test_opencode_swarm_agent_and_active_agy_catalog(self):
         for agent_name in ("swarm.md", "orchestrator.md"):

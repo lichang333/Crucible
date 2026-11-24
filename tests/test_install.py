@@ -31,7 +31,7 @@ class InstallTests(unittest.TestCase):
         self.write("skills/moa/.env.example", "EXAMPLE_API_KEY=\n")
         self.write("skills/auto/agy_guard.py", "#!/usr/bin/env python3\n")
         for platform in ("codex", "claude", "gemini", "opencode", "cursor"):
-            skills = ("moa", "auto", "swarms", "orchestrator") if platform == "gemini" else ("moa", "auto", "swarm", "orchestrator") if platform in ("codex", "opencode", "cursor") else ("moa", "auto", "orchestrator")
+            skills = ("moa", "auto", "swarms", "orchestrator") if platform == "gemini" else ("moa", "auto", "swarm", "orchestrator")
             for skill in skills:
                 self.write(f"platforms/{platform}/skills/{skill}/SKILL.md",
                            f"{platform}: {skill}\n")
@@ -95,7 +95,7 @@ class InstallTests(unittest.TestCase):
                      else ".config/opencode" if platform == "opencode"
                      else ".cursor" if platform == "cursor"
                      else ".gemini/config")
-        skills = ("moa", "auto", "swarms", "orchestrator") if platform == "gemini" else ("moa", "auto", "swarm", "orchestrator") if platform in ("codex", "opencode", "cursor") else ("moa", "auto", "orchestrator")
+        skills = ("moa", "auto", "swarms", "orchestrator") if platform == "gemini" else ("moa", "auto", "swarm", "orchestrator")
         for skill in skills:
             path = self.user_home / directory / "skills" / skill
             self.assertTrue(path.is_symlink())
