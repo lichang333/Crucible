@@ -146,7 +146,7 @@ platforms/opencode/                 OpenCode skills (`moa`, `auto`, `swarm`, `or
 platforms/cursor/                   Cursor skills (`moa`, `auto`, `swarm`, `orchestrator`), subagents (`swarm-coordinator`, `orchestrator`), & `alwaysApply` rule
 shared/                             common project, evidence, sandbox, and bridge workflows
 config/                             provider/model catalog (`headless.json`) and per-host profiles
-docs/                               supplementary prompt templates (e.g. `chatgpt-moa-swarm-prompt.md`)
+docs/                               supplementary guides and prompt templates (`chatgpt-moa-swarm-prompt.md`, `magpie-routing-groups.md`)
 skills/moa/                         shared MoA runner, evidence cross-review, and offline tests
 skills/auto/                        agy/Claude executors, guard, sandbox profile, recovery, and offline tests
 tests/                              installer and platform package verification suites
